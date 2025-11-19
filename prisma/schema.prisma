@@ -1,0 +1,110 @@
+// Prisma schema for Postgres backend (optional). Run `npx prisma generate` after installing deps.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id            String  @id @default(cuid())
+  connections   Json?
+  integrations  Json?
+}
+
+model TestSuite {
+  id                    String  @id @default(cuid())
+  orgId                 String
+  name                  String
+  thresholds            Json?
+  defaultEnvId          String?
+  defaultConnectionKey  String?
+  labels                Json?
+}
+
+model Environment {
+  id        String  @id @default(cuid())
+  orgId     String
+  suiteId   String
+  name      String
+  channel   String
+  baseUrl   String?
+  headers   Json?
+  timeoutMs Int?
+}
+
+model Persona {
+  id    String  @id @default(cuid())
+  orgId String
+  name  String?
+  yaml  String?
+  text  String?
+}
+
+model Request {
+  // requestId is a natural key within an org; use composite unique
+  id        String  @id @default(cuid())
+  orgId     String
+  reqKey    String
+  title     String?
+  transport Json?
+  inputSchema Json?
+
+  @@unique([orgId, reqKey])
+}
+
+model Test {
+  id                String  @id @default(cuid())
+  orgId             String
+  suiteId           String
+  name              String
+  personaId         String?
+  scriptText        String?
+  scriptJson        Json?
+  steps             Json?
+  assertions        Json?
+  objective         String?
+  iterate           Boolean?
+  maxTurns          Int?
+  minTurns          Int?
+  continueAfterPass Boolean?
+  judgeConfig       Json?
+}
+
+model TestRun {
+  id             String  @id @default(cuid())
+  orgId          String
+  suiteId        String
+  envId          String?
+  connectionKey  String?
+  trigger        String
+  status         String
+  stopRequested  Boolean? @default(false)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  totals         Json?
+  items          Json?
+  progress       Json?
+  error          Json?
+  summaryScore   Float?
+  judge          Json?
+}
+
+model Usage {
+  id            String  @id @default(cuid())
+  orgId         String
+  runId         String
+  suiteId       String
+  envId         String?
+  connectionKey String?
+  status        String
+  startedAt     DateTime
+  finishedAt    DateTime
+  durationSec   Int
+  itemsCount    Int?
+
+  @@unique([runId])
+}

@@ -1,0 +1,67 @@
+name: Build and Push Runs to GHCR
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+    tags: [ "v*.*.*" ]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: lamdis-runs
+
+jobs:
+  build-and-push-runs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up tags
+        id: vars
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          BRANCH_TAG=${GITHUB_REF_NAME//\//-}
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION_TAG="${GITHUB_REF_NAME}"
+          else
+            VERSION_TAG="${BRANCH_TAG}"
+          fi
+
+          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_ENV
+          echo "BRANCH_TAG=${BRANCH_TAG}" >> $GITHUB_ENV
+          echo "VERSION_TAG=${VERSION_TAG}" >> $GITHUB_ENV
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Runs image
+        run: |
+          export DOCKER_BUILDKIT=1
+          if [ -f "lamdis-runs/Dockerfile" ]; then
+            DF="lamdis-runs/Dockerfile"
+            CTX="lamdis-runs"
+          else
+            DF="Dockerfile"
+            CTX="."
+          fi
+          echo "Using Dockerfile=$DF context=$CTX"
+
+          IMAGE_BASE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${IMAGE_NAME}"
+
+          docker build -f "$DF" "$CTX" \
+            -t "${IMAGE_BASE}:latest" \
+            -t "${IMAGE_BASE}:${VERSION_TAG}" \
+            -t "${IMAGE_BASE}:${SHORT_SHA}"
+
+      - name: Push Runs images
+        run: |
+          IMAGE_BASE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${IMAGE_NAME}"
+          docker push "${IMAGE_BASE}:latest"
+          docker push "${IMAGE_BASE}:${VERSION_TAG}"
+          docker push "${IMAGE_BASE}:${SHORT_SHA}"
