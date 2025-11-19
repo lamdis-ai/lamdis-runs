@@ -37,8 +37,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: sterlingbm
+          password: ${{ secrets.GHCR_PAT }}
 
       - name: Build Runs image
         run: |
