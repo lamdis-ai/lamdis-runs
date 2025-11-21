@@ -1,10 +1,24 @@
-# lamdis-runs
+# lamdis-runs 🚦🤖
 
-**lamdis-runs** is a background runner for **conversational test suites**. It runs entirely on its own (no lamdis‑api/web required) so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
+**lamdis-runs** is an open-source test runner for **AI assistants and agents**. It runs entirely on its own so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
+
+Think of it as a **conversational test framework for LLM agents**:
+
+- 🧪 **Agentic assistant testing** – design suites that exercise your chatbots, copilots, retrieval-augmented generation (RAG) systems, or workflow agents.
+- 🧱 **LLM workflow regression tests** – catch regressions across complex, multi-step conversations and tool calls.
+- ✅ **Safety & compliance checks** – encode FINRA/SEC/consumer‑safety rules as semantic + deterministic assertions.
+
+lamdis‑runs is part of **Lamdis**, a set of tools for:
+
+- 🧠 **LLM assistant quality assurance**
+- 🧭 **Agentic workflow correctness testing**
+- 📊 **Evaluation and scoring of large language model behavior over time**
+
+If you are searching for a *"test framework for LLM agents", "conversational AI testing", "LLM QA for chatbots", or "open source AI assistant test runner"*, lamdis‑runs is designed for that use case.
 
 ---
 
-## Who is this for?
+## Who is this for? 🎯
 
 * **AI platform teams** who want a lightweight CI gate for assistants/agents.
 * **Feature teams** building a bot and needing repeatable end‑to‑end checks.
@@ -12,7 +26,7 @@
 
 ---
 
-## What it does
+## What it does ⚙️
 
 * Runs suites against your assistant via **HTTP chat** or **OpenAI chat**.
 * Iterates turn‑by‑turn and uses an **LLM judge** for semantic checks (OpenAI/Bedrock).
@@ -21,7 +35,7 @@
 
 ---
 
-## Requirements
+## Requirements 📦
 
 * **Node.js** 20+
 
