@@ -48,6 +48,8 @@ lamdis‑runs automatically runs in **JSON‑only, non‑persistent mode** unles
 
 ## TL;DR: local + CI (JSON‑first)
 
+> **Note:** To keep upgrades simple, treat lamdis‑runs as the **engine** and only change **configs/** (JSON) and **env vars** in your own implementation.
+
 ### 1) Local, file‑based tests + CLI (no DB required)
 
 1. Start lamdis‑runs (same binary, no DB needed):
@@ -502,6 +504,35 @@ Use `npm run wait -- <runId>` and rely on its exit code. Optionally query Mongo 
 
 **Can I run my own judge service?**
 Yes. Set `JUDGE_BASE_URL` and call the same judge contract.
+
+---
+
+## Updating lamdis-runs (engine vs configs)
+
+When you clone or template this repo for your own use, keep a clean boundary between the **engine** and your **configs**:
+
+```text
+your-repo/
+  engine/   # lamdis-runs engine (this code), periodically synced from upstream
+  configs/  # your JSON: auth/, requests/, assistants/, tests/, suites/
+```
+
+- Only edit `configs/` (JSON) and env vars for your implementation.
+- Leave `engine/` as the dependency you periodically update from the official lamdis‑runs repo.
+
+Minimal update flow for `engine/` (from inside your repo):
+
+```bash
+cd engine
+git remote add upstream https://github.com/lamdis-ai/lamdis-runs.git  # once
+git fetch upstream
+git merge upstream/main   # or: git rebase upstream/main
+cd ..
+git add engine
+git commit -m "chore: update lamdis-runs engine"
+```
+
+Your JSON under `configs/` is never touched by the engine merge, so you can safely take upstream improvements.
 
 ---
 
