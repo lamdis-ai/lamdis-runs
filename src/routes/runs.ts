@@ -300,8 +300,86 @@ export default async function runsRoutes(app: FastifyInstance) {
     return U.toString();
   };
 
-  async function executeRequest(orgId: any, requestId: string, input: any, authHeader?: string, log?: (entry: any)=>void): Promise<{ kind: 'text'|'data'; payload: any; status: number; contentType: string }>{
-    const r = repo.isPg() ? await repo.getRequest(String(orgId), String(requestId)) : await (RequestModel as any).findOne({ orgId, id: requestId }).lean();
+  type OAuthClientCredentialsAuth = {
+    id: string;
+    kind: 'oauth_client_credentials';
+    clientId: string;
+    clientSecret: string;
+    tokenUrl: string;
+    scopes?: string[];
+    cacheTtlSeconds?: number;
+    apply?: { type: 'bearer'; header?: string };
+  };
+
+  const oauthCache: Map<string, { accessToken: string; expiresAt: number }> = new Map();
+
+  async function resolveAuthHeaderFromBlock(auth: any, rootVars: any, log?: (e:any)=>void): Promise<string | undefined> {
+    if (!auth || typeof auth !== 'object') return undefined;
+    const kind = String((auth as any).kind || '').toLowerCase();
+
+    // OAuth client credentials flow
+    if (kind === 'oauth_client_credentials') {
+      const cfg: OAuthClientCredentialsAuth = {
+        id: String(auth.id || ''),
+        kind: 'oauth_client_credentials',
+        clientId: interpolateString(String(auth.clientId || ''), rootVars),
+        clientSecret: interpolateString(String(auth.clientSecret || ''), rootVars),
+        tokenUrl: interpolateString(String(auth.tokenUrl || ''), rootVars),
+        scopes: Array.isArray(auth.scopes) ? auth.scopes.map((s:any)=> String(s)) : undefined,
+        cacheTtlSeconds: typeof auth.cacheTtlSeconds === 'number' ? auth.cacheTtlSeconds : 300,
+        apply: auth.apply && typeof auth.apply === 'object' ? { type: 'bearer', header: String((auth.apply.header || 'authorization')) } : { type: 'bearer', header: 'authorization' },
+      };
+
+      if (!cfg.clientId || !cfg.clientSecret || !cfg.tokenUrl) return undefined;
+
+      const cacheKey = `${cfg.tokenUrl}::${cfg.clientId}::${(cfg.scopes||[]).join(' ')}`;
+      const nowTs = Date.now();
+      const cached = oauthCache.get(cacheKey);
+      if (cached && cached.expiresAt > nowTs + 5000) {
+        return `Bearer ${cached.accessToken}`;
+      }
+
+      const body = new URLSearchParams();
+      body.set('grant_type', 'client_credentials');
+      body.set('client_id', cfg.clientId);
+      body.set('client_secret', cfg.clientSecret);
+      if (cfg.scopes && cfg.scopes.length) body.set('scope', cfg.scopes.join(' '));
+
+      try {
+        const resp = await fetch(cfg.tokenUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+        const json = await resp.json().catch(()=> ({} as any));
+        const accessToken = String(json.access_token || '');
+        if (!accessToken) {
+          log?.({ t: new Date().toISOString(), type: 'auth_error', strategy: 'oauth_client_credentials', details: { status: resp.status, body: json } });
+          return undefined;
+        }
+        const expiresIn = Number(json.expires_in || cfg.cacheTtlSeconds || 300);
+        oauthCache.set(cacheKey, { accessToken, expiresAt: nowTs + expiresIn * 1000 });
+        return `Bearer ${accessToken}`;
+      } catch (e:any) {
+        log?.({ t: new Date().toISOString(), type: 'auth_error', strategy: 'oauth_client_credentials', details: { error: e?.message || 'token_fetch_failed' } });
+        return undefined;
+      }
+    }
+
+    // Static headers-only auth
+    if (auth.headers && typeof auth.headers === 'object') {
+      const headers = interpolateDeep(auth.headers, rootVars) || {};
+      const val = headers.authorization || headers.Authorization;
+      return typeof val === 'string' ? val : undefined;
+    }
+
+    return undefined;
+  }
+
+  async function executeRequest(orgId: any, requestId: string, input: any, authHeader?: string, log?: (entry: any)=>void, fileRequests?: Record<string, any>, authBlocks?: Record<string, any>): Promise<{ kind: 'text'|'data'; payload: any; status: number; contentType: string }> {
+    const r = fileRequests && fileRequests[requestId]
+      ? fileRequests[requestId]
+      : (repo.isPg() ? await repo.getRequest(String(orgId), String(requestId)) : await (RequestModel as any).findOne({ orgId, id: requestId }).lean());
     if (!r) throw new Error(`request_not_found: ${requestId}`);
     const t = (r as any).transport || {};
     const http = t.http || {};
@@ -312,14 +390,36 @@ export default async function runsRoutes(app: FastifyInstance) {
     const tpl = (s: string) => String(s).replace(/\{([^}]+)\}/g, (_, k) => (input && (input as any)[k] !== undefined) ? String((input as any)[k]) : `{${k}}`);
     finalUrl = tpl(finalUrl);
     let headers: Record<string,string> = {};
+
+    // Base headers from request config
     if (http.headers && typeof http.headers === 'object') {
       for (const [k,v] of Object.entries(http.headers)) headers[String(k)] = tpl(String(v));
     }
-    if (authHeader && !headers['Authorization']) headers['Authorization'] = authHeader;
+
+    // Resolve auth from authRef on the request if present, overriding top-level authHeader
+    let finalAuthHeader = authHeader;
+    const authRef = (r as any).authRef || (t as any).authRef;
+    if (authRef && authBlocks && authBlocks[authRef]) {
+      const block = authBlocks[authRef];
+      const rootVars = { env: process.env, input };
+      const hdr = await resolveAuthHeaderFromBlock(block, rootVars, log);
+      if (hdr) finalAuthHeader = hdr;
+    }
+
+    if (finalAuthHeader && !headers['Authorization'] && !headers['authorization']) headers['Authorization'] = finalAuthHeader;
+
     let body: any = undefined;
     let reqUrl = finalUrl;
-    if (method === 'GET') reqUrl = appendQuery(finalUrl, input);
-    else { headers['content-type'] = headers['content-type'] || 'application/json'; body = JSON.stringify(input ?? {}); }
+
+    // Body handling: allow explicit http.body template, otherwise default to input for non-GET
+    if (method === 'GET') {
+      reqUrl = appendQuery(finalUrl, input);
+    } else {
+      headers['content-type'] = headers['content-type'] || 'application/json';
+      const rawBody = (http as any).body !== undefined ? (http as any).body : (input ?? {});
+      const resolvedBody = interpolateDeep(rawBody, { input });
+      body = headers['content-type'].includes('application/json') ? JSON.stringify(resolvedBody) : resolvedBody;
+    }
     log?.({ t: new Date().toISOString(), type: 'request_exec', requestId, method, url: reqUrl });
     const resp = await fetch(reqUrl, { method, headers, body });
     const ct = resp.headers.get('content-type') || '';
@@ -1309,9 +1409,10 @@ export default async function runsRoutes(app: FastifyInstance) {
       ...t,
     }));
 
-    // Load modular requests into an in-memory map so request assertions can resolve them
+    // Load modular requests into an in-memory map so steps/assertions can resolve them
     // even when no DB is configured.
     const fileRequests: Record<string, any> = {};
+    const authBlocks: Record<string, any> = {};
     if (cfg.imports?.requests) {
       for (const rel of cfg.imports.requests) {
         try {
@@ -1322,6 +1423,10 @@ export default async function runsRoutes(app: FastifyInstance) {
           const raw = fs.readFileSync(p, 'utf8');
           const doc = JSON.parse(raw);
           const arr: any[] = Array.isArray(doc?.requests) ? doc.requests : [];
+          const auth = doc?.auth;
+          if (auth && typeof auth === 'object' && typeof auth.id === 'string') {
+            authBlocks[auth.id] = auth;
+          }
           for (const r of arr) {
             if (r && typeof r.id === 'string') fileRequests[r.id] = r;
           }
@@ -1437,7 +1542,7 @@ export default async function runsRoutes(app: FastifyInstance) {
                   const root = { ...bag, lastAssistant: bag?.last?.assistant, lastUser: bag?.last?.user };
                   const input = interpolateDeep(step.input ?? {}, root);
                   try {
-                    const exec = await executeRequest(orgId, String(step.requestId), input, authHeader, (e:any)=> logs.push(e));
+                    const exec = await executeRequest(orgId, String(step.requestId), input, authHeader, (e:any)=> logs.push(e), fileRequests, authBlocks);
                     bag.last = { ...bag.last, request: exec.payload };
                     const key = String(step.assign || step.requestId);
                     if (key) bag.var[key] = exec.payload;
@@ -1560,7 +1665,7 @@ export default async function runsRoutes(app: FastifyInstance) {
             if ((a as any).type === 'request' && (a as any).config?.requestId) {
               try {
                 const input = (((a as any).config?.input) || {});
-                const exec = await executeRequest(orgId, String((a as any).config.requestId), input, authHeader, (e:any)=> logs.push(e));
+                const exec = await executeRequest(orgId, String((a as any).config.requestId), input, authHeader, (e:any)=> logs.push(e), fileRequests, authBlocks);
                 const pathStr = String(((a as any).config?.expect?.path) || '');
                 const expected = (a as any).config?.expect?.equals;
                 const actual = pathStr ? getAtPath(exec.payload, pathStr) : exec.payload;

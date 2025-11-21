@@ -83,13 +83,30 @@ This calls `POST /internal/run-file` and exits **non‑zero** if any test fails 
 
 ---
 
-### 2) Docker Compose
+### 2) Docker (JSON-only runner)
+
+You can also run lamdis‑runs in a container **without Mongo**, and still point it at JSON tests on disk:
 
 ```bash
-docker compose up --build
+docker build -t lamdis-runs:local .
+
+docker run --rm -p 3101:3101 \ 
+  -e LAMDIS_API_TOKEN="changeme" \
+  lamdis-runs:local
 ```
 
-Once up, you can call `npm run run-file` against the exposed runner.
+Then from your host (where your JSON files live):
+
+```bash
+cd lamdis-runs
+export LAMDIS_API_TOKEN="changeme"
+export LAMDIS_RUNS_URL="http://127.0.0.1:3101"
+
+npm run run-file -- tests/finra-checks/p1-tests.json
+npm run run-file -- suites/legal-tests.json
+```
+
+The container is just the runner binary; your tests, assistants, auth, and suites all stay in JSON under version control.
 
 ---
 
@@ -126,15 +143,39 @@ Example `personas/retail.json`:
 
 Attach personas in tests via `personaId` on user messages.
 
-### 2) Auth blocks
+### 2) Auth blocks (including OAuth client credentials)
 
-Auth files live under `auth/` and describe how to turn env vars into headers your requests/assistants can reuse.
+Auth files live under `auth/` and describe how to turn env vars into headers your requests/assistants can reuse. They can be **static** (direct env → header) or **dynamic** (OAuth client credentials flow).
 
-Example `auth/dev1.json`:
+Example `auth/dev1.json` – OAuth client credentials:
 
 ```jsonc
 {
   "id": "auth/dev1",
+  "kind": "oauth_client_credentials",
+  "clientId": "${ACCOUNTS_CLIENT_ID}",
+  "clientSecret": "${ACCOUNTS_CLIENT_SECRET}",
+  "tokenUrl": "https://login.example.com/oauth2/token",
+  "scopes": ["accounts.read", "accounts.write"],
+  "cacheTtlSeconds": 300,
+  "apply": {
+    "type": "bearer",
+    "header": "authorization"
+  }
+}
+```
+
+- You set `ACCOUNTS_CLIENT_ID` / `ACCOUNTS_CLIENT_SECRET` env vars.
+- When lamdis‑runs executes a request or assistant that references `authRef: "auth/dev1"`, it will:
+  - Call `tokenUrl` using client credentials and `scopes`.
+  - Extract `access_token` from the response.
+  - Inject `Authorization: Bearer <access_token>` (or whatever header/type you configure in `apply`).
+
+You can also use **static header auth** if you already have a token:
+
+```jsonc
+{
+  "id": "auth/static-dev",
   "headers": {
     "authorization": "Bearer ${ACCOUNTS_API_TOKEN}",
     "x-api-key": "${BOT_API_KEY}"
@@ -142,12 +183,11 @@ Example `auth/dev1.json`:
 }
 ```
 
-- You set `ACCOUNTS_API_TOKEN` / `BOT_API_KEY` in your environment.
-- `requests/*.json` and `assistants/*.json` then reference this via `authRef`.
+In both cases, `requests/*.json` and `assistants/*.json` reference the auth config via `authRef`.
 
 ### 3) Requests + auth
 
-Example `requests/accounts.json` (simplified):
+Example `requests/accounts.json` – create test data with POST body:
 
 ```jsonc
 {
@@ -162,8 +202,12 @@ Example `requests/accounts.json` (simplified):
           "base_url": "https://api.example.com",
           "path": "/accounts",
           "headers": {
-            "content-type": "application/json",
-            "authorization": "Bearer ${ACCOUNTS_API_TOKEN}"
+            "content-type": "application/json"
+          },
+          "body": {
+            "account_id": "${input.accountId}",
+            "status": "${input.status}",
+            "balance": "${input.balance}"
           }
         }
       }
@@ -173,7 +217,12 @@ Example `requests/accounts.json` (simplified):
 ```
 
 - `authRef` tells lamdis‑runs which auth block to use (see `auth/dev1.json`).
-- Use these from steps with `{"type":"request","requestId":"accounts.create_test",...}`.
+- `body` can reference `input` fields passed from a step (`input.accountId`, etc.).
+- Use these from steps with e.g.:
+
+  ```jsonc
+  { "type": "request", "requestId": "accounts.create_test", "input": { "accountId": "acct-123", "status": "open", "balance": 1000 } }
+  ```
 
 ### 4) Assistant definition + auth
 
@@ -234,7 +283,9 @@ Example `tests/finra-checks/p1-tests.json` (simplified):
 
 ### 6) Suites
 
-Suites connect assistants and test files. Example `suites/legal-tests.json`:
+Suites connect assistants and test files.
+
+Example `suites/legal-tests.json`:
 
 ```jsonc
 {
@@ -248,13 +299,24 @@ Suites connect assistants and test files. Example `suites/legal-tests.json`:
 }
 ```
 
-You can then run that test file directly:
+There are two common ways to run things from the CLI:
 
-```bash
-npm run run-file -- tests/finra-checks/p1-tests.json
-```
+1. **Run a single test file directly** (quick local dev, small checks):
 
-This is the primary open-source workflow: keep your tests and configs in JSON under version control, invoke them via the CLI locally or from CI, and optionally wire a hosted lamdis‑runs instance if you want persistence and richer APIs.
+   ```bash
+   npm run run-file -- tests/finra-checks/p1-tests.json
+   ```
+
+2. **Run a suite file** that points at assistants + tests (recommended for CI):
+
+   ```bash
+   npm run run-file -- suites/legal-tests.json
+   ```
+
+   - Your suite file can either embed tests directly under `tests` **or** include test files via `includeFiles` as in the example above.
+   - The `assistantRef` in the tests or the `assistants.include` in the suite tells lamdis‑runs which assistant/env to use.
+
+This is the primary open-source workflow: keep your tests, assistants, auth, and suites in JSON under version control, invoke them via the CLI locally or from CI, and optionally wire a hosted lamdis‑runs instance if you want persistence and richer APIs.
 
 ---
 ## Configuration
@@ -370,16 +432,11 @@ jobs:
 ---
 
 ## Docker
+For **hosted / persistent** usage (Mongo, long‑running service), see `README.hosted.md`.
 
-Use the provided `docker-compose.yml` to start Mongo + lamdis‑runs, or build/run directly:
+For local JSON‑only usage, use the Docker snippet in the quickstart above, or run `npm run dev` directly.
 
-```bash
-docker build -t lamdis-runs:local .
-docker run --rm -p 3101:3101 \
-  -e MONGO_URL="mongodb://host.docker.internal:27017/lamdis" \
-  -e LAMDIS_API_TOKEN="changeme" \
-  lamdis-runs:local
-```
+> Note: the published packages and Docker images primarily exist to support the **hosted lamdis‑runs service**; the core open‑source experience is JSON + CLI in your own repo.
 
 ---
 
