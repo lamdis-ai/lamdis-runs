@@ -360,13 +360,21 @@ export BEDROCK_JUDGE_TEMPERATURE=0.0
 
 ---
 
-## CI/CD recipes (CLI-focused)
+## CI/CD recipes
 
-### GitHub Actions
+There are two main ways to use lamdis‑runs from CI.
+
+### 1) Local / non-hosted: CLI in the same job
+
+- Run lamdis‑runs in the same CI job (no network hop), and fail based on the CLI exit code.
+- You typically do this when experimenting or if you don’t yet have a shared runner.
+
+Example (GitHub Actions):
 
 ```yaml
-name: lamdis-runs
+name: lamdis-local
 on: [push]
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
@@ -375,43 +383,63 @@ jobs:
       - run: |
           cd lamdis-runs
           npm install
-          export LAMDIS_API_TOKEN="${{ secrets.LAMDIS_API_TOKEN }}"
-          export LAMDIS_RUNS_URL="http://lamdis-runs.internal:3101"
-          npm run run-file -- tests/finra-checks/p1-tests.json
+          export LAMDIS_API_TOKEN="changeme"
+          npm run dev &
+          sleep 5
+          export LAMDIS_RUNS_URL="http://127.0.0.1:3101"
+          npm run run-file -- suites/legal-tests.json
 ```
 
-### GitLab CI
+- `npm run run-file` exits non‑zero if there are failures, so the job fails.
 
-```yaml
-e2e:
-  image: node:20
-  script:
-    - |
-      cd lamdis-runs
-      npm install
-      export LAMDIS_API_TOKEN="$LAMDIS_API_TOKEN"
-      export LAMDIS_RUNS_URL="http://lamdis-runs.internal:3101"
-      npm run run-file -- tests/finra-checks/p1-tests.json
+### 2) Hosted JSON-on-disk runner: suites + webhook
+
+- Run lamdis‑runs as a **central runner** with JSON configs on disk.
+- From each assistant service’s CI, you call **one endpoint** to run one or more suites and let a webhook handle the result.
+
+Request (from your Spring AI service CI):
+
+```bash
+curl -sS -X POST "$LAMDIS_RUNS_URL/internal/runs/start" \
+  -H "content-type: application/json" \
+  -H "x-api-token: $LAMDIS_API_TOKEN" \
+  -d '{
+    "mode": "json",
+    "suites": ["legal-tests", "regression-tests"],
+    "webhookUrl": "https://ci.mycompany.com/lamdis-webhook",
+    "gitContext": {
+      "repo": "my-org/spring-ai-service",
+      "sha": "abc123",
+      "runId": "github-run-456"
+    }
+  }'
 ```
 
-### CircleCI
+- lamdis‑runs resolves those suite IDs to JSON files (e.g. `suites/legal-tests.json`) and runs them.
+- When finished, it POSTs a summary to `webhookUrl`:
 
-```yaml
-version: 2.1
-jobs:
-  e2e:
-    docker: [{ image: cimg/node:20.10 }]
-    steps:
-      - checkout
-      - run: |
-          cd lamdis-runs
-          npm install
-          export LAMDIS_API_TOKEN="$LAMDIS_API_TOKEN"
-          export LAMDIS_RUNS_URL="http://lamdis-runs.internal:3101"
-          npm run run-file -- tests/finra-checks/p1-tests.json
+```jsonc
+{
+  "mode": "json",
+  "status": "passed",
+  "passRate": 1,
+  "totals": { "passed": 10, "failed": 0, "skipped": 0 },
+  "suites": [
+    { "id": "legal-tests", "status": "passed", "totals": { "passed": 5, "failed": 0, "skipped": 0 } },
+    { "id": "regression-tests", "status": "passed", "totals": { "passed": 5, "failed": 0, "skipped": 0 } }
+  ],
+  "gitContext": {
+    "repo": "my-org/spring-ai-service",
+    "sha": "abc123",
+    "runId": "github-run-456"
+  }
+}
 ```
 
-> **Policy gates**: `npm run run-file` exits non‑zero on failures, so your CI job will fail automatically.
+Your webhook handler can then:
+
+- Fail the CI run if `status` is `failed` or `partial`.
+- Attach comments/links back to the PR with details from the summary.
 
 ---
 
@@ -432,11 +460,20 @@ jobs:
 ---
 
 ## Docker
-For **hosted / persistent** usage (Mongo, long‑running service), see `README.hosted.md`.
+lamdis‑runs supports two hosting styles:
 
-For local JSON‑only usage, use the Docker snippet in the quickstart above, or run `npm run dev` directly.
+- **JSON-on-disk runner** (no DB):
+  - JSON configs (auth/requests/assistants/tests/suites) live on disk (in this repo or a fork).
+  - lamdis‑runs reads those files at runtime and executes them via `/internal/run-file`.
+  - Use this for both local dev and central CI gates.
+- **Mongo-backed persistent service**:
+  - Test definitions and run results are stored in Mongo.
+  - You trigger runs via `/internal/runs/start` and inspect results via Mongo/HTTP.
+  - See `README.hosted.md` for details.
 
-> Note: the published packages and Docker images primarily exist to support the **hosted lamdis‑runs service**; the core open‑source experience is JSON + CLI in your own repo.
+For JSON-on-disk usage, use the Docker snippet in the quickstart above, or run `npm run dev` directly.
+
+> Note: the published packages and Docker images primarily exist to support running lamdis‑runs as a **service** (JSON-on-disk or Mongo-backed); the core open‑source authoring experience is JSON + CLI in your own repo.
 
 ---
 
