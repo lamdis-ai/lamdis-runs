@@ -1,0 +1,43 @@
+{
+  "$schema": "https://github.com/lamdis-ai/lamdis-runs/schema/assistant-file.v1.json",
+  "id": "assistants/dev/v1",
+  "name": "Dev Assistant v1",
+  "env": {
+    "channel": "http_chat",
+    "baseUrl": "https://dev-bot.example.com",
+    "timeoutMs": 20000,
+    "headers": {
+      "x-api-key": "${BOT_API_KEY}"
+    }
+  },
+  "auth": {
+    "authRef": "auth/dev1"
+  },
+  "path": "/chat",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "message": { "type": "string" },
+      "transcript": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "role": { "type": "string" },
+            "content": { "type": "string" },
+            "personaId": { "type": "string" }
+          },
+          "required": ["role", "content"]
+        }
+      }
+    },
+    "required": ["message"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "reply": { "type": "string" }
+    },
+    "required": ["reply"]
+  }
+}

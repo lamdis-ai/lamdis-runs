@@ -1,0 +1,70 @@
+{
+  "$schema": "https://github.com/lamdis-ai/lamdis-runs/schema/requests-file.v1.json",
+  "requests": [
+    {
+      "id": "accounts.create_test",
+      "title": "Create test investment account",
+      "auth": {
+        "authRef": "auth/dev1"
+      },
+      "transport": {
+        "mode": "direct",
+        "authority": "broker",
+        "http": {
+          "method": "POST",
+          "base_url": "https://api.example.com",
+          "path": "/accounts",
+          "headers": {
+            "content-type": "application/json"
+          },
+          "body": {
+            "id": 1001,
+            "risk_level": "high",
+            "status": "open"
+          }
+        }
+      }
+    },
+    {
+      "id": "accounts.get",
+      "title": "Get account",
+      "auth": {
+        "authRef": "auth/dev1"
+      },
+      "transport": {
+        "mode": "direct",
+        "authority": "broker",
+        "http": {
+          "method": "GET",
+          "base_url": "https://api.example.com",
+          "path": "/accounts/{id}",
+          "headers": {
+            "Authorization": "Bearer ${AUTH_TOKEN}"
+          }
+        }
+      }
+    },
+    {
+      "id": "accounts.update_risk",
+      "title": "Update risk profile",
+      "auth": {
+        "authRef": "auth/dev1"
+      },
+      "transport": {
+        "mode": "direct",
+        "authority": "broker",
+        "http": {
+          "method": "PATCH",
+          "base_url": "https://api.example.com",
+          "path": "/accounts/{id}",
+          "headers": {
+            "content-type": "application/json"
+          },
+          "body": {
+            "risk_level": "moderate"
+          }
+        }
+      }
+    }
+  ]
+}

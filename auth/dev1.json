@@ -1,0 +1,13 @@
+{
+  "$schema": "https://github.com/lamdis-ai/lamdis-runs/schema/auth-file.v1.json",
+  "id": "auth/dev1",
+  "env": {
+    "AUTH_TOKEN": "${DEV1_API_TOKEN}",
+    "BOT_API_KEY": "${DEV1_BOT_API_KEY}"
+  },
+  "pattern": {
+    "type": "bearer",
+    "header": "Authorization",
+    "template": "Bearer ${AUTH_TOKEN}"
+  }
+}

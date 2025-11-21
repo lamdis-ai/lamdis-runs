@@ -1,0 +1,22 @@
+{
+  "$schema": "https://github.com/lamdis-ai/lamdis-runs/schema/suite-file.v1.json",
+  "id": "legal-tests",
+  "description": "Legal and compliance-oriented tests",
+  "assistants": {
+    "includeFolders": [
+      "assistants/dev"
+    ],
+    "include": [
+      "assistants/dev/v1"
+    ],
+    "exclude": []
+  },
+  "tests": {
+    "includeFiles": [
+      "tests/finra-checks/p1-tests.json"
+    ],
+    "includeIds": [
+      "finra-suitability-p1"
+    ]
+  }
+}

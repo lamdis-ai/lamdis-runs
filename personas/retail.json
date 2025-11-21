@@ -1,0 +1,23 @@
+{
+  "$schema": "https://github.com/lamdis-ai/lamdis-runs/schema/personas-file.v1.json",
+  "personas": [
+    {
+      "id": "retail-us-low-literacy",
+      "description": "US retail customer with low financial literacy, anxious about markets.",
+      "userProfile": {
+        "ageRange": "25-34",
+        "jurisdiction": "US",
+        "segment": "retail"
+      }
+    },
+    {
+      "id": "vip-high-net-worth",
+      "description": "High-net-worth client with prior investing experience.",
+      "userProfile": {
+        "ageRange": "45-60",
+        "jurisdiction": "US",
+        "segment": "hnw"
+      }
+    }
+  ]
+}

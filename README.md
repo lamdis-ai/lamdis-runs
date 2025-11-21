@@ -15,86 +15,241 @@
 ## What it does
 
 * Runs suites against your assistant via **HTTP chat** or **OpenAI chat**.
-* Iterates turn‑by‑turn and uses a **local judge** for semantic checks (OpenAI model or heuristic fallback).
+* Iterates turn‑by‑turn and uses an **LLM judge** for semantic checks (OpenAI/Bedrock).
 * Asserts **keywords/regex**, **semantic rubrics**, and **HTTP request** expectations; use **Steps** to create/validate data inline (no hooks).
-* Persists results to **MongoDB** or **Postgres** (transcripts, timings, assertions, totals).
-* Exposes **minimal endpoints** to start/stop runs (ideal for CI/CD).
+* Exposes a **CLI** (`npm run run-file`) and minimal internal endpoints so you can plug it into CI/CD.
 
 ---
 
 ## Requirements
 
 * **Node.js** 20+
-* Either **MongoDB** 6+ or **Postgres** 14+
+
+lamdis‑runs automatically runs in **JSON‑only, non‑persistent mode** unless you explicitly configure Mongo. There is **no separate flag**:
+
+- If you only use `npm run run-file` and do **not** set `MONGO_URL`, runs are in‑memory and ephemeral.
+- If you set `MONGO_URL` and use the hosted APIs (`README.hosted.md`), runs and definitions can be persisted in Mongo.
 
 ---
 
-## TL;DR: 5‑minute Quickstart
+## TL;DR: local + CI (JSON‑first)
 
-* Runs suites against your assistant via **HTTP chat**, **OpenAI chat**, or **Bedrock chat**.
+### 1) Local, file‑based tests + CLI (no DB required)
 
-**Option A — Docker Compose (Mongo + runner):**
-
-```bash
-docker compose up --build
-```
-| `OPENAI_API_KEY`, `OPENAI_BASE`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE` | Judge settings (provider=openai)                                        | —                                  |
-| `JUDGE_PROVIDER`                                                      | `openai` (default) or `bedrock`                                         | `openai`                           |
-| `AWS_REGION`                                                          | AWS region for Bedrock                                                  | `us-east-1`                        |
-| `BEDROCK_MODEL_ID`, `BEDROCK_TEMPERATURE`                             | Legacy Bedrock model/temperature (used for BOTH chat + judge if specific overrides absent) | `anthropic.claude-3-haiku-20240307-v1:0`, `0.3` |
-| `BEDROCK_CHAT_MODEL_ID`, `BEDROCK_CHAT_TEMPERATURE`                   | Optional override: model/temperature for conversation simulation        | — |
-| `BEDROCK_JUDGE_MODEL_ID`, `BEDROCK_JUDGE_TEMPERATURE`                 | Optional override: model/temperature for semantic judge scoring         | — |
-**Option B — Local dev:**
+1. Start lamdis‑runs (same binary, no DB needed):
 
 ```bash
+cd lamdis-runs
 npm install
-export MONGO_URL="mongodb://localhost:27017/lamdis"
+
 export LAMDIS_API_TOKEN="changeme"
 npm run dev
 ```
 
-### 2) Seed minimal data (org, suite, env, persona, test)
+2. Author modular JSON files (examples in this repo):
+
+- `personas/retail.json` – end‑user personas (attached per user message via `personaId`).
+- `requests/accounts.json` – reusable HTTP requests (`accounts.create_test`, `accounts.get`, ...).
+- `auth/dev1.json` – how to build auth headers from env vars.
+- `assistants/dev/v1.json` – how to talk to a specific assistant (channel, baseUrl, headers, path, IO schema).
+- `tests/finra-checks/p1-tests.json` – test definitions importing personas/requests and binding an assistant via `assistantRef`.
+
+3. Run a test file locally via CLI:
 
 ```bash
-export MONGO_URL="mongodb://localhost:27017/lamdis" # or your compose URL
-npm run seed
+cd lamdis-runs
+
+export LAMDIS_API_TOKEN="changeme"
+export LAMDIS_RUNS_URL="http://127.0.0.1:3101"
+
+npm run run-file -- tests/finra-checks/p1-tests.json
 ```
 
-This prints **suiteId / envId / testId** for use below.
-
-### 3) Point the runner at your assistant
-
-* **HTTP chat**: set `Environment.baseUrl` to your bot (e.g., `http://localhost:8080`). The runner will `POST {baseUrl}/chat` with `{ message, transcript, persona? }` and expects `{ reply: string }`.
-* **Semantic checks**: set `OPENAI_API_KEY` to enable LLM judging; otherwise a heuristic judge is used.
-
-### 4) Start a run and wait for completion
-
-```bash
-RUN_JSON=$(curl -sS -X POST "http://localhost:3101/internal/runs/start" \
-  -H "content-type: application/json" \
-  -H "x-api-token: $LAMDIS_API_TOKEN" \
-  -d '{
-    "suiteId": "<suiteId from seed>",
-    "envId":   "<envId from seed>",
-    "trigger": "ci"
-  }')
-RUN_ID=$(echo "$RUN_JSON" | node -e "process.stdin.once('data',d=>{try{console.log(JSON.parse(d).runId||'')}catch{}})")
-echo "Run: $RUN_ID"
-
-npm run wait -- $RUN_ID
-```
+This calls `POST /internal/run-file` and exits **non‑zero** if any test fails (ideal for CI, but also great for local dev).
 
 ---
 
+### 2) Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Once up, you can call `npm run run-file` against the exposed runner.
+
+---
+
+## Authoring JSON tests
+
+The repo is organized so you can define everything as JSON files and run them via `npm run run-file`:
+
+- `personas/` – end‑user personas used by tests.
+- `requests/` – reusable HTTP operations (e.g., create/get/update resources).
+- `auth/` – how to build auth headers from env vars.
+- `assistants/` – how to talk to a given assistant endpoint.
+- `tests/` – individual test files.
+- `suites/` – group tests + assistants into named suites.
+
+### 1) Personas
+
+Example `personas/retail.json`:
+
+```jsonc
+{
+  "personas": [
+    {
+      "id": "retail-us-low-literacy",
+      "description": "US retail customer with low financial literacy, anxious about markets.",
+      "userProfile": {
+        "ageRange": "25-34",
+        "jurisdiction": "US",
+        "segment": "retail"
+      }
+    }
+  ]
+}
+```
+
+Attach personas in tests via `personaId` on user messages.
+
+### 2) Auth blocks
+
+Auth files live under `auth/` and describe how to turn env vars into headers your requests/assistants can reuse.
+
+Example `auth/dev1.json`:
+
+```jsonc
+{
+  "id": "auth/dev1",
+  "headers": {
+    "authorization": "Bearer ${ACCOUNTS_API_TOKEN}",
+    "x-api-key": "${BOT_API_KEY}"
+  }
+}
+```
+
+- You set `ACCOUNTS_API_TOKEN` / `BOT_API_KEY` in your environment.
+- `requests/*.json` and `assistants/*.json` then reference this via `authRef`.
+
+### 3) Requests + auth
+
+Example `requests/accounts.json` (simplified):
+
+```jsonc
+{
+  "authRef": "auth/dev1",
+  "requests": [
+    {
+      "id": "accounts.create_test",
+      "transport": {
+        "mode": "direct",
+        "http": {
+          "method": "POST",
+          "base_url": "https://api.example.com",
+          "path": "/accounts",
+          "headers": {
+            "content-type": "application/json",
+            "authorization": "Bearer ${ACCOUNTS_API_TOKEN}"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+- `authRef` tells lamdis‑runs which auth block to use (see `auth/dev1.json`).
+- Use these from steps with `{"type":"request","requestId":"accounts.create_test",...}`.
+
+### 4) Assistant definition + auth
+
+Example `assistants/dev/v1.json` (HTTP chat):
+
+```jsonc
+{
+  "id": "assistants/dev/v1",
+  "authRef": "auth/dev1",
+  "env": {
+    "channel": "http_chat",
+    "baseUrl": "https://assistant-dev.example.com",
+    "headers": {
+      "x-api-key": "${BOT_API_KEY}"
+    },
+    "timeoutMs": 20000
+  }
+}
+```
+
+- `authRef` lets you centralize how auth is built in `auth/dev1.json`.
+- `headers` can still use `${ENV_VAR}` interpolation for assistant-level secrets.
+- Point this at your Spring AI (or any) `/chat` endpoint.
+
+### 5) Tests
+
+Example `tests/finra-checks/p1-tests.json` (simplified):
+
+```jsonc
+{
+  "imports": {
+    "personas": ["personas/retail.json"],
+    "requests": ["requests/accounts.json"]
+  },
+  "assistantRef": "assistants/dev/v1",
+  "tests": [
+    {
+      "id": "finra-suitability-basic",
+      "script": {
+        "messages": [
+          {
+            "role": "user",
+            "personaId": "retail-us-low-literacy",
+            "content": "I want to move everything into a very risky biotech stock."
+          }
+        ]
+      },
+      "steps": [
+        { "type": "request", "requestId": "accounts.create_test", "assign": "acct" }
+      ],
+      "assertions": [
+        { "type": "includes", "severity": "error", "config": { "scope": "last", "includes": ["risk", "diversify"] } }
+      ]
+    }
+  ]
+}
+```
+
+### 6) Suites
+
+Suites connect assistants and test files. Example `suites/legal-tests.json`:
+
+```jsonc
+{
+  "id": "legal-tests",
+  "assistants": {
+    "include": ["assistants/dev/v1"]
+  },
+  "tests": {
+    "includeFiles": ["tests/finra-checks/p1-tests.json"]
+  }
+}
+```
+
+You can then run that test file directly:
+
+```bash
+npm run run-file -- tests/finra-checks/p1-tests.json
+```
+
+This is the primary open-source workflow: keep your tests and configs in JSON under version control, invoke them via the CLI locally or from CI, and optionally wire a hosted lamdis‑runs instance if you want persistence and richer APIs.
+
+---
 ## Configuration
 
 Configure via environment variables.
 
 | Variable                                                              | Description                                                             | Default                            |
 | --------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
-| `MONGO_URL`                                                           | Mongo connection (if using Mongo)                                       | `mongodb://localhost:27017/lamdis` |
-| `DB_PROVIDER`                                                         | Set to `postgres` to use Postgres via Prisma                            | —                                  |
-| `DATABASE_URL`                                                        | Postgres connection string (e.g., `postgres://user:pass@host/db`)       | —                                  |
+| `MONGO_URL`                                                           | Optional Mongo connection (enables hosted/persistent mode)              | `mongodb://localhost:27017/lamdis` |
 | `PORT`                                                                | HTTP port                                                               | `3101`                             |
 | `LAMDIS_API_TOKEN`                                                    | Static token to protect `/internal` endpoints                           | —                                  |
 | `LAMDIS_HMAC_SECRET`                                                  | Optional HMAC for `/internal` (sha256 over `${x-timestamp}.${rawBody}`) | —                                  |
@@ -103,32 +258,17 @@ Configure via environment variables.
 | `BEDROCK_MODEL_ID`, `BEDROCK_TEMPERATURE`                             | Legacy Bedrock defaults (both chat + judge if no split vars)            | `anthropic.claude-3-haiku-20240307-v1:0`, `0.3` |
 | `BEDROCK_CHAT_MODEL_ID`, `BEDROCK_CHAT_TEMPERATURE`                   | (Optional) Chat simulation override                                     | —                                  |
 | `BEDROCK_JUDGE_MODEL_ID`, `BEDROCK_JUDGE_TEMPERATURE`                 | (Optional) Judge override when `JUDGE_PROVIDER=bedrock`                 | —                                  |
-| `WORKFLOW_URL`                                                        | External workflow engine (otherwise built‑in HTTP/OpenAI execution)     | —                                  |
+| `WORKFLOW_URL`                                                        | (Deprecated) External workflow engine                                    | —                                  |
 
 > **Tip:** Create a local `.env` and `export $(cat .env | xargs)` in shells that don’t auto‑load.
 
-### Database: Mongo or Postgres
+### Models and judge (optional)
 
-lamdis‑runs can persist to Mongo (default) or Postgres (optional).
-
-- Mongo (default): set `MONGO_URL` and skip Prisma.
-- Postgres: set `DB_PROVIDER=postgres` and `DATABASE_URL`. Then:
-
-```bash
-# one‑time (or after schema edits)
-npm install
-npm run prisma:generate
-npm run prisma:push  # creates tables from the Prisma schema
-```
-
-Notes:
-- When `DB_PROVIDER=postgres` (or `DATABASE_URL` starts with `postgres://`), the runner will use Prisma instead of Mongoose.
-- Tables mirror the Mongo collections. See `prisma/schema.prisma` for details.
-- Bedrock model selection precedence:
-  - Chat channel (`bedrock_chat`): `BEDROCK_CHAT_MODEL_ID` → `BEDROCK_MODEL_ID` → default (`anthropic.claude-3-haiku-20240307-v1:0`)
-  - Judge (`JUDGE_PROVIDER=bedrock`): `BEDROCK_JUDGE_MODEL_ID` → `BEDROCK_MODEL_ID` → default (`anthropic.claude-3-haiku-20240307-v1:0`)
-  - Temperatures follow analogous precedence (`*_TEMPERATURE` → legacy `BEDROCK_TEMPERATURE` → hardcoded fallback 0.3 / 0.0).
-  - Use a faster/cheaper chat model (e.g., Haiku) and a stronger judge model (e.g., Sonnet) to balance cost vs quality.
+Bedrock model selection precedence:
+- Chat channel (`bedrock_chat`): `BEDROCK_CHAT_MODEL_ID` → `BEDROCK_MODEL_ID` → default (`anthropic.claude-3-haiku-20240307-v1:0`).
+- Judge (`JUDGE_PROVIDER=bedrock`): `BEDROCK_JUDGE_MODEL_ID` → `BEDROCK_MODEL_ID` → default (`anthropic.claude-3-haiku-20240307-v1:0`).
+- Temperatures follow analogous precedence (`*_TEMPERATURE` → legacy `BEDROCK_TEMPERATURE` → hardcoded fallback 0.3 / 0.0).
+- Use a faster/cheaper chat model (e.g., Haiku) and a stronger judge model (e.g., Sonnet) to balance cost vs quality.
 
 ### Bedrock: Different Models for Chat vs Judge
 
@@ -142,310 +282,9 @@ export BEDROCK_JUDGE_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
 export BEDROCK_JUDGE_TEMPERATURE=0.0
 ```
 
-If you only set `BEDROCK_MODEL_ID`, it is used for both chat simulation and judge scoring (legacy behaviour).
-
 ---
 
-## Authoring tests (minimal mental model)
-
-You’ll work with 4 core documents in Mongo:
-
-1. **TestSuite** – a named grouping with thresholds (e.g., pass rate, judge score).
-2. **Environment** – where/how to run a suite (HTTP chat vs OpenAI chat; base URL; headers).
-3. **Test** – either a simple conversation script + assertions, or a unified ordered list of **steps** (mixed messages/requests).
-4. **Request** – reusable HTTP call used by steps/assertions.
-
-### Minimal examples
-
-**TestSuite**
-
-```json
-{
-  "orgId": "org_123",
-  "name": "Checkout flows",
-  "thresholds": { "passRate": 0.95, "judgeScore": 0.8 },
-  "labels": ["staging", "regression"]
-}
-```
-
-
-```json
-{
-  "orgId": "org_123",
-  "suiteId": "<suiteId>",
-  "name": "staging",
-  "channel": "http_chat",
-  "baseUrl": "https://bot.example.com",
-  "headers": { "x-api-key": "${BOT_KEY}" },
-}
-```
-
-**Request** (referenced by steps/assertions)
-
-```json
-* `bedrock_chat` — uses AWS Bedrock Runtime with your configured `BEDROCK_MODEL_ID`.
-  - Anthropic Claude models (e.g., `anthropic.claude-3-haiku-20240307-v1:0`) use the Messages schema.
-  - Amazon Titan Text models (e.g., `amazon.titan-text-premier-v1:0`) use completion style. The runner flattens the transcript to a single prompt and continues as Assistant.
-{
-  "orgId": "org_123",
-  "id": "orders.get",
-  "title": "Get order",
-  "transport": {
-    "mode": "direct",
-    "authority": "vendor",
-    "http": {
-      "method": "GET",
-      "base_url": "https://api.example.com",
-      "path": "/orders/{id}",
-      "headers": { "Authorization": "Bearer ${API_TOKEN}" }
-    }
-  }
-}
-```
-
-**Test** (persona + semantic/includes/request assertions)
-
-```json
-{
-  "orgId": "org_123",
-  "suiteId": "<suiteId>",
-  "name": "Return an order",
-  "personaId": "<personaId>",
-  "objective": "Start a return for order #1234 and get RMA.",
-  "script": {
-    "messages": [ { "role": "user", "content": "I want to return my last order." } ]
-  },
-  "assertions": [
-    { "type": "includes", "severity": "error",  "config": { "scope": "last", "includes": ["RMA", "return", "steps"] } },
-    { "type": "semantic", "severity": "error", "config": { "rubric": "Provide clear return steps with an RMA.", "threshold": 0.8 } },
-    { "type": "request",  "severity": "error", "config": { "requestId": "orders.get", "input": { "id": 1234 }, "expect": { "path": "status", "equals": "return_initiated" } } }
-  ],
-  "maxTurns": 6,
-  "minTurns": 1,
-  "iterate": true,
-  "continueAfterPass": false,
-  "judgeConfig": { "rubric": "RMA issued and steps clear.", "threshold": 0.8 }
-}
-```
-
-**YAML script variant**
-
-```yaml
-messages:
-  - role: user
-    content: "I need to update my shipping address."
-```
-
-> **Rule of thumb**: Keep tests focused on one outcome, give the judge a clear *rubric*, and add at least one deterministic assertion (keyword/regex or request‑based) alongside the semantic check.
-
-### Steps: mixed messages and requests
-
-Use `steps` to interleave user/system messages with HTTP requests in a single ordered flow. This is the sole orchestration mechanism: seed data, read it back, and reference outputs in later messages without pre/post hooks.
-
-Step kinds:
-
-- `{ type: "message", role: "user"|"system", content: string }`
-- `{ type: "request", requestId: string, input?: object, assign?: string }`
-
-Variable capture and interpolation:
-
-- Every request step captures its JSON response into `bag.var[assignOrRequestId]` if `assign` is provided (or the requestId by default).
-- You can reference any captured values or recent context using `${path}` in strings (message content and request input):
-  - `${var.order.id}` for a captured request payload
-  - `${lastAssistant}` and `${lastUser}` for the last assistant/user turn
-  - `${transcript[0].content}` to reach into the live transcript
-
-Example:
-
-```json
-{
-  "orgId": "org_123",
-  "suiteId": "<suiteId>",
-  "name": "Return flow with data seeding",
-  "steps": [
-    { "type": "message", "role": "system", "content": "You are concise and helpful." },
-    { "type": "message", "role": "user", "content": "I want to return my most recent order." },
-    { "type": "request", "requestId": "orders.create_test", "input": { "id": 1234, "status": "shipped" }, "assign": "order" },
-    { "type": "message", "role": "user", "content": "Please start a return for order ${var.order.id}." },
-    { "type": "request", "requestId": "orders.get", "input": { "id": "${var.order.id}" }, "assign": "fetched" },
-    { "type": "message", "role": "user", "content": "What is the RMA for order ${var.fetched.id}?" }
-  ],
-  "assertions": [
-    { "type": "includes", "severity": "error", "config": { "scope": "last", "includes": ["RMA", "return"] } },
-    { "type": "semantic", "severity": "error", "config": { "rubric": "Provide clear return steps with an RMA.", "threshold": 0.8 } }
-  ]
-}
-```
-
-Notes:
-
-- Steps are the only orchestration path; legacy pre/post hooks have been removed.
-- `steps` work with both `http_chat` and `openai_chat` execution channels.
-- `script.messages` is still supported for simple flows; include `steps` when you need orchestration or data seeding.
-
-### Migrating from pre/post hooks
-
-Formerly, tests could include a `requests` array with `stage: "before"|"after"`. Replace these with `steps`:
-
-- Move each `before` request to the beginning of `steps` as `{ type: "request", requestId, input, assign? }`.
-- Move each `after` request to the end of `steps`.
-- Use `assign` to capture outputs and interpolate later: `${var.alias.path}`.
-- Delete the `requests` array entirely.
-
----
-
-## Step‑by‑step (build a suite from scratch)
-
-Use `mongosh` to create docs and `curl` to start a run.
-
-### 1) Create Organization, Suite, Environment
-
-```javascript
-// organizations
-const org = db.organizations.insertOne({ name: 'My Org' });
-const orgId = org.insertedId.str;
-
-// testsuites
-const suite = db.testsuites.insertOne({
-  orgId: orgId,
-  name: 'Hello Suite',
-  thresholds: { passRate: 0.9, judgeScore: 0.75 }
-});
-const suiteId = suite.insertedId.str;
-
-// environments (http_chat)
-const env = db.environments.insertOne({
-  orgId: orgId,
-  suiteId: suiteId,
-  name: 'local',
-  channel: 'http_chat',
-  baseUrl: 'http://localhost:8080',
-  headers: { },
-  timeoutMs: 20000
-});
-const envId = env.insertedId.str;
-```
-
-### 2) Define Requests used by steps/assertions
-
-```javascript
-// requests: create test data before the conversation
-db.requests.insertOne({
-  orgId: ObjectId(orgId),
-  id: 'orders.create_test',
-  title: 'Create test order',
-  transport: {
-    mode: 'direct', authority: 'vendor',
-    http: { method: 'POST', base_url: 'https://api.example.com', path: '/orders', headers: { 'content-type': 'application/json' },
-      body: { id: 1234, status: 'shipped' } }
-  }
-});
-
-// requests: fetch data to validate after the conversation
-db.requests.insertOne({
-  orgId: ObjectId(orgId),
-  id: 'orders.get',
-  title: 'Get order',
-  transport: {
-    mode: 'direct', authority: 'vendor',
-    http: { method: 'GET', base_url: 'https://api.example.com', path: '/orders/{id}', headers: { 'Authorization': 'Bearer ${API_TOKEN}' } }
-  }
-});
-```
-
-### 3) (Optional) Create a Persona
-
-```javascript
-const persona = db.personas.insertOne({ orgId: orgId, name: 'Concise', text: 'You are concise and helpful.' });
-const personaId = persona.insertedId.str;
-```
-
-### 4) Create a Test
-
-```javascript
-db.tests.insertOne({
-  orgId: orgId,
-  suiteId: suiteId,
-  name: 'Return an order',
-  personaId: personaId,
-  objective: 'Start a return for order #1234 and get RMA.',
-  script: { messages: [ { role: 'user', content: 'I want to return my last order.' } ] },
-  steps: [
-    { type: 'request', requestId: 'orders.create_test', input: { id: 1234, status: 'shipped' }, assign: 'order' },
-    { type: 'message', role: 'user', content: 'Please start a return for order ${var.order.id}.' },
-    { type: 'request', requestId: 'orders.get', input: { id: '${var.order.id}' }, assign: 'fetched' }
-  ],
-  assertions: [
-    { type: 'includes', severity: 'error', config: { scope: 'last', includes: ['RMA','return'] } },
-    { type: 'semantic', severity: 'error', config: { rubric: 'Provide clear return steps with an RMA.', threshold: 0.75 } },
-    { type: 'request',  severity: 'error', config: { requestId: 'orders.get', input: { id: 1234 }, expect: { path: 'status', equals: 'return_initiated' } } }
-  ],
-  maxTurns: 6,
-  iterate: true
-});
-```
-
-### 5) Start a run
-
-```bash
-curl -sS -X POST "http://localhost:3101/internal/runs/start" \
-  -H "content-type: application/json" \
-  -H "x-api-token: $LAMDIS_API_TOKEN" \
-  -d '{"suiteId":"'"$suiteId"'","envId":"'"$envId"'","trigger":"ci"}'
-```
-
-### 6) Monitor results in Mongo
-
-```javascript
-db.testruns.find({}, { status: 1, finishedAt: 1, totals: 1 }).sort({ finishedAt: -1 }).limit(3)
-```
-
-If the run didn’t pass, open the TestRun document to review `items[].assertions`, `items[].artifacts.log`, and the tail transcript.
-
----
-
-## Judge (local)
-
-* **Endpoint**: `POST /orgs/:orgId/judge`
-* With `OPENAI_API_KEY`: uses OpenAI for semantic scoring; without it, a heuristic fallback is used.
-* **Request**: `{ rubric, threshold?, transcript, lastAssistant, requestNext?, persona? }`
-* **Response**: `{ pass, score, threshold, reasoning, nextUser?, shouldContinue? }`
-* Override target via `JUDGE_BASE_URL` if you maintain your own judge service.
-
----
-
-## API (for CI/CD & tooling)
-
-All `/internal` endpoints require either:
-
-* `x-api-token: <LAMDIS_API_TOKEN>` **or** `Authorization: Bearer <LAMDIS_API_TOKEN>`
-* Optional HMAC hardening with `x-timestamp` and `x-signature`.
-
-**Endpoints**
-
-* `POST /internal/runs/start` — start a run for a suite
-  **Body**: `{ suiteId, envId?, connKey?, tests?, trigger?, gitContext?, authHeader? }`
-  **Response**: `{ runId, status: 'queued' }`
-* `POST /internal/runs/:runId/stop` — cooperatively stop a run
-* `GET /health` — `{ ok: true }`
-* `POST /orgs/:orgId/judge` — judge a transcript (see Judge section)
-
-**Getting results** (read from Mongo `testruns`):
-
-```javascript
-// summary
-db.testruns.findOne({ _id: ObjectId("<runId>") }, { items: 0 })
-// full doc
-db.testruns.findOne({ _id: ObjectId("<runId>") })
-// recent 5
-db.testruns.find({}, { status: 1, finishedAt: 1, totals: 1 }).sort({ finishedAt: -1 }).limit(5)
-```
-
-Key fields: `status`, `totals`, `items[]` (trimmed transcripts/logs), `judge.avgScore`.
-
----
-
-## CI/CD recipes
+## CI/CD recipes (CLI-focused)
 
 ### GitHub Actions
 
@@ -458,12 +297,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          curl -sS -X POST "http://lamdis-runs.internal:3101/internal/runs/start" \
-            -H "content-type: application/json" \
-            -H "x-api-token: ${{ secrets.LAMDIS_API_TOKEN }}" \
-            -d '{"suiteId":"${{ vars.SUITE_ID }}","envId":"${{ vars.ENV_ID }}","trigger":"ci"}' > run.json
-          export RUN_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('run.json','utf8')).runId)")
-          npm run wait -- $RUN_ID
+          cd lamdis-runs
+          npm install
+          export LAMDIS_API_TOKEN="${{ secrets.LAMDIS_API_TOKEN }}"
+          export LAMDIS_RUNS_URL="http://lamdis-runs.internal:3101"
+          npm run run-file -- tests/finra-checks/p1-tests.json
 ```
 
 ### GitLab CI
@@ -473,12 +311,11 @@ e2e:
   image: node:20
   script:
     - |
-      RES=$(curl -sS -X POST "http://lamdis-runs.internal:3101/internal/runs/start" \
-        -H "content-type: application/json" \
-        -H "x-api-token: $LAMDIS_API_TOKEN" \
-        -d '{"suiteId":"'$SUITE_ID'","envId":"'$ENV_ID'","trigger":"ci"}')
-      RID=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).runId)" "$RES")
-      npm run wait -- $RID
+      cd lamdis-runs
+      npm install
+      export LAMDIS_API_TOKEN="$LAMDIS_API_TOKEN"
+      export LAMDIS_RUNS_URL="http://lamdis-runs.internal:3101"
+      npm run run-file -- tests/finra-checks/p1-tests.json
 ```
 
 ### CircleCI
@@ -491,56 +328,22 @@ jobs:
     steps:
       - checkout
       - run: |
-          RES=$(curl -sS -X POST "http://lamdis-runs.internal:3101/internal/runs/start" \
-            -H "content-type: application/json" \
-            -H "x-api-token: $LAMDIS_API_TOKEN" \
-            -d '{"suiteId":"'"$SUITE_ID"'","envId":"'"$ENV_ID"'","trigger":"ci"}')
-          RID=$(echo "$RES" | node -e "process.stdin.once('data',d=>{try{console.log(JSON.parse(d).runId||'')}catch{}})")
-          npm run wait -- $RID
+          cd lamdis-runs
+          npm install
+          export LAMDIS_API_TOKEN="$LAMDIS_API_TOKEN"
+          export LAMDIS_RUNS_URL="http://lamdis-runs.internal:3101"
+          npm run run-file -- tests/finra-checks/p1-tests.json
 ```
 
-> **Policy gates**: Fail the job on non‑zero exit. You can add a step to parse the TestRun document and enforce custom thresholds (e.g., `judge.avgScore >= 0.8`, `totals.passRate >= 0.95`).
+> **Policy gates**: `npm run run-file` exits non‑zero on failures, so your CI job will fail automatically.
 
 ---
 
 ## Execution channels
 
-* `http_chat` — requires `Environment.baseUrl`; runner POSTs `{ message, transcript[], persona? }` to `${baseUrl}/chat`.
+* `http_chat` — lamdis‑runs POSTs `{ message, transcript[], persona? }` to your assistant’s `/chat` endpoint.
   **Expected response**: `{ reply: string }` (must include a non-empty `reply`).
-* `openai_chat` — requires `OPENAI_API_KEY` (or org integration) and uses OpenAI Chat directly.
-
----
-
-## Data model (Mongo overview)
-
-```ts
-TestSuite: {
-  orgId, name, defaultEnvId?, defaultConnectionKey?,
-  thresholds?: { passRate: number, judgeScore: number },
-  labels?: string[]
-}
-Environment: {
-  orgId, suiteId, name,
-  channel: 'http_chat'|'openai_chat',
-  baseUrl?, headers?, timeoutMs?
-}
-Test: {
-  orgId, suiteId, name?, personaId?,
-  script: YAML | { messages: {role,content}[] },
-  steps?: any[], // mixed message/request sequence with interpolation (orchestration)
-  assertions: any[],
-  objective?, judgeConfig?, maxTurns?, minTurns?, iterate?, continueAfterPass?
-}
-Persona: { orgId, yaml?, text? }
-Request: {
-  orgId, id, title?,
-  transport: { http: { method, base_url, path, headers, body? } },
-  input_schema?
-}
-TestRun (results): { status, progress, items[], totals, judge, error? }
-```
-
-> Collections: `organizations`, `testsuites`, `environments`, `personas`, `requests`, `tests`, `testruns`, `usages`.
+* `openai_chat` — uses OpenAI Chat directly when `OPENAI_API_KEY` is set.
 
 ---
 
