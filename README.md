@@ -2,6 +2,8 @@
 
 **lamdis-runs** is an open-source test runner for **AI assistants and agents**. It runs entirely on its own so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
 
+> **Status:** lamdis‑runs is currently in **beta**. APIs and JSON formats may change, and it has not yet been fully battle-tested for all production scenarios.
+
 Think of it as a **conversational test framework for LLM agents**:
 
 - 🧪 **Agentic assistant testing** – design suites that exercise your chatbots, copilots, retrieval-augmented generation (RAG) systems, or workflow agents.
@@ -331,6 +333,8 @@ Configure via environment variables.
 | `PORT`                                                                | HTTP port                                                               | `3101`                             |
 | `LAMDIS_API_TOKEN`                                                    | Static token to protect `/internal` endpoints                           | —                                  |
 | `LAMDIS_HMAC_SECRET`                                                  | Optional HMAC for `/internal` (sha256 over `${x-timestamp}.${rawBody}`) | —                                  |
+| `LAMDIS_RESULTS_ENABLED`                                              | When `"true"`, write compact per-run JSON summaries under `results/`    | `false` (disabled)                 |
+| `LAMDIS_RESULTS_DIR`                                                  | Optional root directory for local results (overrides `results/`)        | `<cwd>/results`                    |
 | `JUDGE_BASE_URL`                                                      | Override if you run a separate judge service                            | self                               |
 | `OPENAI_API_KEY`, `OPENAI_BASE`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE` | Judge settings                                                          | —                                  |
 | `BEDROCK_MODEL_ID`, `BEDROCK_TEMPERATURE`                             | Legacy Bedrock defaults (both chat + judge if no split vars)            | `anthropic.claude-3-haiku-20240307-v1:0`, `0.3` |
