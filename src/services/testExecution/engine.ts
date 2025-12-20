@@ -16,7 +16,6 @@ export type EngineTest = {
   script: any;
   personaText?: string;
   steps?: any[];
-  assertions?: any[];
   objective?: string;
   maxTurns?: number;
   iterate?: boolean;
@@ -100,8 +99,6 @@ export async function runTestsWithEngine(
       const environment = ctx.environment;
 
       let result: any = null;
-      const tAssertionsPre: any[] = Array.isArray((t as any).assertions) ? (t as any).assertions : [];
-      const semA = tAssertionsPre.find((a: any) => a && a.type === 'semantic' && a.config?.rubric);
       const maxTurns = Number((t as any)?.maxTurns || 8);
       const shouldIterate = (t as any)?.iterate !== false;
       const continueAfterPass = (t as any)?.continueAfterPass === true;
@@ -336,10 +333,10 @@ export async function runTestsWithEngine(
               await sendUser(userMsg);
               turns++;
 
-              if (shouldIterate && (semA && semA.config?.rubric || t.judgeConfig?.rubric)) {
+              if (shouldIterate && t.judgeConfig?.rubric) {
                 try {
-                  const rubric = semA?.config?.rubric || t.judgeConfig?.rubric;
-                  const threshold = semA?.config?.threshold ?? t.judgeConfig?.threshold;
+                  const rubric = t.judgeConfig?.rubric;
+                  const threshold = t.judgeConfig?.threshold;
                   const lastA = String(
                     transcriptTurns
                       .slice()
@@ -512,10 +509,7 @@ export async function runTestsWithEngine(
       if (item.status === 'passed') passed++;
       else failed++;
     } catch (e: any) {
-      const rawMsg = e?.message || 'exec_failed';
-      const cleanMsg = rawMsg && rawMsg.includes("reading 'assertions'")
-        ? 'Internal runner error while processing assertions'
-        : rawMsg;
+      const cleanMsg = e?.message || 'exec_failed';
       items.push({
         testId: String(t._id),
         status: 'failed',

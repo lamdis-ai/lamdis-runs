@@ -82,8 +82,6 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
         };
 
         let result: any = null;
-        const tAssertionsPre: any[] = Array.isArray((t as any).assertions) ? (t as any).assertions : [];
-        const semA = tAssertionsPre.find((a:any)=> a && a.type==='semantic' && a.config?.rubric);
         const maxTurns = Number((t as any)?.maxTurns || 8);
         const shouldIterate = (t as any)?.iterate !== false;
         const continueAfterPass = (t as any)?.continueAfterPass === true;
@@ -224,10 +222,10 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
                 await sendUser(userMsg);
                 turns++;
 
-                if (shouldIterate && (semA && semA.config?.rubric || (t as any)?.judgeConfig?.rubric)) {
+                if (shouldIterate && (t as any)?.judgeConfig?.rubric) {
                   try {
-                    const rubric = semA?.config?.rubric || (t as any)?.judgeConfig?.rubric;
-                    const threshold = semA?.config?.threshold ?? (t as any)?.judgeConfig?.threshold;
+                    const rubric = (t as any)?.judgeConfig?.rubric;
+                    const threshold = (t as any)?.judgeConfig?.threshold;
                     const lastA = String(transcriptTurns.slice().reverse().find((m:any)=>m.role==='assistant')?.content || '');
                     const judgeBody = { rubric, threshold, transcript: transcriptTurns, lastAssistant: lastA, requestNext: true, persona: personaText };
                     const judgeResp = await fetch(judgeUrl, { method:'POST', headers: { 'content-type': 'application/json', ...(authHeader ? { Authorization: authHeader } : {}) }, body: JSON.stringify(judgeBody) });
@@ -299,44 +297,8 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
           result = await r.json();
         }
 
-        const extraAssertions: any[] = [];
-        try {
-          const transcript: any[] = Array.isArray(result.transcript) ? result.transcript : [];
-          const lastAssistant = transcript.slice().reverse().find((m:any)=>m.role==='assistant')?.content || '';
-          const tAssertions: any[] = Array.isArray((t as any).assertions) ? (t as any).assertions : [];
-          for (const a of tAssertions) {
-            if (!a || typeof a !== 'object') continue;
-            if (a.type === 'includes') {
-              const inc: string[] = Array.isArray(a.config?.includes) ? a.config.includes : [];
-              const scope = a.config?.scope === 'last' ? 'last' : 'transcript';
-              const hay = scope==='transcript' ? JSON.stringify(transcript).toLowerCase() : String(lastAssistant).toLowerCase();
-              const misses = inc.filter((k:string)=> !hay.includes(String(k||'').toLowerCase()));
-              const pass = misses.length === 0;
-              const incRes = { type: 'includes', severity: a.severity||'error', config: a.config, pass, details: { misses } };
-              extraAssertions.push(incRes);
-              logs.push({ t: now(), type: 'judge_check', subtype: 'includes', pass, details: incRes.details });
-            }
-            if (a.type === 'semantic' && a.config?.rubric) {
-              try {
-                const judgeResp = await fetch(judgeUrl, { method:'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rubric: a.config.rubric, threshold: a.config.threshold, transcript, lastAssistant }) });
-                const j = await judgeResp.json();
-                const pass = !!j.pass;
-                const details = { score: j.score, threshold: j.threshold, reasoning: j.reasoning };
-                extraAssertions.push({ type: 'semantic', severity: a.severity||'error', config: a.config, pass, details });
-                logs.push({ t: now(), type: 'judge_check', subtype: 'semantic', pass, details });
-                if (typeof j.score === 'number') judgeScores.push(Number(j.score));
-              } catch (e:any) {
-                const details = { error: e?.message || 'judge_failed' };
-                extraAssertions.push({ type: 'semantic', severity: a.severity||'error', config: a.config, pass: false, details });
-                logs.push({ t: now(), type: 'judge_check', subtype: 'semantic', pass: false, details });
-              }
-            }
-          }
-        } catch {}
-
         let status = result?.status || 'failed';
-        const baseAssertions = Array.isArray(result.assertions) ? result.assertions : [];
-        const combinedAssertions = [...baseAssertions, ...extraAssertions];
+        const combinedAssertions = Array.isArray(result?.assertions) ? result.assertions : [];
         const anyFail = combinedAssertions.some((a:any)=> a && a.pass === false && (a.severity||'error') !== 'info');
         if (anyFail) status = 'failed';
 
@@ -344,11 +306,7 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
         itemIdx++;
         if (status === 'passed') passed++; else failed++;
       } catch (e:any) {
-        const rawMsg = e?.message || 'exec_failed';
-        const cleanMsg = rawMsg && rawMsg.includes("reading 'assertions'")
-          ? 'Internal runner error while processing assertions'
-          : rawMsg;
-        items.push({ testId: String((t as any)._id), status: 'failed', error: { message: cleanMsg } });
+        items.push({ testId: String((t as any)._id), status: 'failed', error: { message: e?.message || 'exec_failed' } });
         failed++;
       }
     }

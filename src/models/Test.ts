@@ -9,7 +9,6 @@ const TestSchema = new Schema({
   // Optional unified steps sequence allowing mixed messages/requests
   // Example: [{ type:'message', role:'user', content:'Hi ${var.user.name}' }, { type:'request', requestId:'orders.get', input:{ id: '${var.orderId}' }, assign:'order' }]
   steps: { type: [Schema.Types.Mixed], default: [] },
-  assertions: { type: [Schema.Types.Mixed], default: [] },
   maxTurns: { type: Number },
   minTurns: { type: Number },
   iterate: { type: Boolean },

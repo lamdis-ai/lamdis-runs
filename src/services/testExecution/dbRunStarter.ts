@@ -195,7 +195,6 @@ export async function startDbBackedRun(body: DbRunStartInput) {
           script,
           personaText,
           steps: (t as any).steps,
-          assertions: (t as any).assertions,
           objective: (t as any).objective,
           maxTurns: (t as any).maxTurns,
           iterate: (t as any).iterate,
@@ -216,7 +215,7 @@ export async function startDbBackedRun(body: DbRunStartInput) {
       const engineResult = await runTestsWithEngine(engineTests, ctx, {
         executeRequest: async (orgId, requestId, input) => {
           const exec = await executeRequest(orgId, requestId, input, authHeader, () => {});
-          return { status: exec.status, payload: exec.payload };
+          return { status: String(exec.status), payload: exec.payload };
         },
         log: async (entry: any) => {
           const fresh = repo.isPg()
@@ -311,7 +310,7 @@ export async function startDbBackedRun(body: DbRunStartInput) {
             judge: { avgScore: avgJudge },
           },
         };
-        await writeRunResultToDisk(fullResultDoc as any);
+        await writeRunResultToDisk(runId, fullResultDoc as any);
       } catch {}
 
       const usageDoc: any = {
@@ -324,7 +323,7 @@ export async function startDbBackedRun(body: DbRunStartInput) {
         judge: { avgScore: avgJudge },
         createdAt: new Date(),
       };
-      if (repo.isPg()) await repo.insertUsage(usageDoc);
+      if (repo.isPg()) await repo.createOrUpdateUsage(runId, usageDoc);
       else await (UsageModel as any).create(usageDoc);
 
       if (body.webhookUrl) {
