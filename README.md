@@ -1,5 +1,13 @@
 # lamdis-runs 🚦🤖
 
+[![GitHub stars](https://img.shields.io/github/stars/lamdis-ai/lamdis-runs?style=social)](https://github.com/lamdis-ai/lamdis-runs)
+[![npm version](https://img.shields.io/npm/v/lamdis-runs.svg)](https://www.npmjs.com/package/lamdis-runs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml/badge.svg)](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs/branch/main/graph/badge.svg)](https://codecov.io/gh/lamdis-ai/lamdis-runs)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
+
 **lamdis-runs** is an open-source test runner for **AI assistants and agents**. It runs entirely on its own so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
 
 > **Status:** lamdis‑runs is currently in **beta**. APIs and JSON formats may change, and it has not yet been fully battle-tested for all production scenarios.
@@ -554,6 +562,56 @@ Your JSON under `configs/` is never touched by the engine merge, so you can safe
 
 ---
 
+## Development & Testing
+
+### Prerequisites
+
+- Node.js 20+
+- npm
+
+### Setup
+
+```bash
+git clone https://github.com/lamdis-ai/lamdis-runs.git
+cd lamdis-runs
+npm install
+```
+
+### Running Tests
+
+```bash
+# Run tests once
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+```
+
+### Test Structure
+
+Tests are organized by module:
+
+- `src/lib/*.spec.ts` - Unit tests for utility functions (interpolation, crypto, URL handling)
+- `src/services/*.spec.ts` - Unit tests for services (judge, auth)
+- `src/db/*.spec.ts` - Unit tests for database repository
+
+We use [Vitest](https://vitest.dev/) as our test framework with V8 for coverage.
+
+### Coverage
+
+Coverage is automatically tracked and displayed via [Codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs). The badge at the top of this README updates automatically with each push to `main`.
+
+**Minimum thresholds enforced in CI:**
+- Statements: 65%
+- Branches: 55%  
+- Functions: 70%
+- Lines: 65%
+
+---
+
 ## Contributing / Questions
 
 Open an issue with:
@@ -562,4 +620,4 @@ Open an issue with:
 * A sample suite/test snippet, and
 * The behavior you expected vs observed.
 
-We’ll extend the docs/examples to cover your case.
+We'll extend the docs/examples to cover your case.
