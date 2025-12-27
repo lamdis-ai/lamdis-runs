@@ -246,6 +246,7 @@ export async function runTestsWithEngine(
                     });
                   } else {
                     try {
+                      const scope = (step as any).scope || 'last';
                       const lastAssistant = String(
                         transcriptTurns
                           .slice()
@@ -257,6 +258,7 @@ export async function runTestsWithEngine(
                         threshold: (step as any).threshold,
                         transcript: transcriptTurns,
                         lastAssistant,
+                        scope,
                       };
                       const judgeResp = await fetch(judgeUrl, {
                         method: 'POST',

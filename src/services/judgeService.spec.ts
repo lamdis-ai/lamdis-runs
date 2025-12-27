@@ -46,6 +46,30 @@ describe('judgeService', () => {
         expect(result.data.transcript).toEqual([]);
       }
     });
+
+    it('accepts scope parameter', () => {
+      const body = { rubric: 'Test', scope: 'transcript' };
+      const result = judgeBodySchema.safeParse(body);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.scope).toBe('transcript');
+      }
+    });
+
+    it('defaults scope to last', () => {
+      const body = { rubric: 'Test' };
+      const result = judgeBodySchema.safeParse(body);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.scope).toBe('last');
+      }
+    });
+
+    it('rejects invalid scope values', () => {
+      const body = { rubric: 'Test', scope: 'invalid' };
+      const result = judgeBodySchema.safeParse(body);
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('judgeConversation', () => {
@@ -228,6 +252,59 @@ describe('judgeService', () => {
       expect(result).toBeDefined();
       // Should have some matches: password, reset, account
       expect(result.score).toBeGreaterThan(0);
+    });
+
+    it('evaluates only lastAssistant when scope is "last"', async () => {
+      const body = {
+        rubric: 'password reset',
+        threshold: 0.3,
+        transcript: [
+          { role: 'user', content: 'I forgot my password' },
+          { role: 'assistant', content: 'I can help you reset your password right away.' },
+        ],
+        lastAssistant: 'Thank you for contacting us!', // No password/reset keywords
+        scope: 'last' as const,
+      };
+      
+      const result = await judgeConversation(body);
+      
+      // Should fail because lastAssistant doesn't contain the keywords
+      expect(result.pass).toBe(false);
+    });
+
+    it('evaluates entire transcript when scope is "transcript"', async () => {
+      const body = {
+        rubric: 'password reset',
+        threshold: 0.3,
+        transcript: [
+          { role: 'user', content: 'I forgot my password' },
+          { role: 'assistant', content: 'I can help you reset your password right away.' },
+        ],
+        lastAssistant: 'Thank you for contacting us!', // No password/reset keywords
+        scope: 'transcript' as const,
+      };
+      
+      const result = await judgeConversation(body);
+      
+      // Should pass because transcript contains the keywords
+      expect(result.pass).toBe(true);
+    });
+
+    it('defaults to scope "last" when not specified', async () => {
+      const body = {
+        rubric: 'billing payment',
+        threshold: 0.3,
+        transcript: [
+          { role: 'assistant', content: 'Your billing and payment details have been updated.' },
+        ],
+        lastAssistant: 'Is there anything else I can help you with?',
+        // No scope specified - should default to 'last'
+      };
+      
+      const result = await judgeConversation(body);
+      
+      // Should fail because lastAssistant doesn't contain billing/payment
+      expect(result.pass).toBe(false);
     });
   });
 });

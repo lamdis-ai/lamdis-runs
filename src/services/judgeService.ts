@@ -9,6 +9,7 @@ export const judgeBodySchema = z.object({
   lastAssistant: z.string().optional(),
   requestNext: z.boolean().optional(),
   persona: z.string().optional(),
+  scope: z.enum(['last', 'transcript']).optional().default('last'),
 });
 
 export type JudgeBody = z.infer<typeof judgeBodySchema>;
@@ -25,14 +26,20 @@ export interface JudgeResult {
 
 export async function judgeConversation(body: JudgeBody): Promise<JudgeResult> {
   const threshold = typeof body.threshold === 'number' ? body.threshold : 0.75;
+  const scope = body.scope || 'last';
   const openaiKey = process.env.OPENAI_API_KEY || '';
   const openaiBase = process.env.OPENAI_BASE || 'https://api.openai.com/v1';
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   const temperatureEnv = process.env.OPENAI_TEMPERATURE;
   const judgeProvider = (process.env.JUDGE_PROVIDER || '').toLowerCase();
 
+  // Determine what text to evaluate based on scope
+  const evaluationText = scope === 'transcript' 
+    ? JSON.stringify(body.transcript || [])
+    : String(body.lastAssistant || '');
+
   if (!openaiKey && judgeProvider !== 'bedrock') {
-    const text = String(body.lastAssistant || JSON.stringify(body.transcript || [])).toLowerCase();
+    const text = evaluationText.toLowerCase();
     const terms = String(body.rubric || '').toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
     const uniq = Array.from(new Set(terms)).slice(0, 20);
     const hits = uniq.filter(t => text.includes(t)).length;
@@ -41,8 +48,13 @@ export async function judgeConversation(body: JudgeBody): Promise<JudgeResult> {
     return { pass, score, threshold, reasoning: 'heuristic_judge_no_openai', shouldContinue: !pass, nextUser: undefined } as any;
   }
 
+  const scopeInstruction = scope === 'transcript'
+    ? 'Evaluate the ENTIRE conversation transcript holistically.'
+    : 'Evaluate only the LAST assistant message.';
+
   const sys = [
     'You are a strict evaluator for assistant conversations.',
+    scopeInstruction,
     'Return ONLY valid JSON matching this TypeScript type:',
     '{ pass: boolean, score: number, threshold: number, reasoning: string, nextUser?: string, shouldContinue?: boolean }',
     'Score should be in [0,1]. Keep reasoning concise (<= 60 words).',
@@ -53,7 +65,8 @@ export async function judgeConversation(body: JudgeBody): Promise<JudgeResult> {
     rubric: body.rubric,
     threshold,
     persona: body.persona,
-    lastAssistant: body.lastAssistant,
+    scope,
+    lastAssistant: scope === 'last' ? body.lastAssistant : undefined,
     transcript: body.transcript,
     requestNext: !!body.requestNext,
   });

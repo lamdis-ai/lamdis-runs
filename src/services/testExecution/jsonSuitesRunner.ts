@@ -184,8 +184,9 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
                       logs.push({ t: now(), type: 'step_skip', subtype: 'assistant_check_judge', reason: 'missing_rubric', step });
                     } else {
                       try {
+                        const scope = (step as any).scope || 'last';
                         const lastAssistant = String(transcriptTurns.slice().reverse().find((m:any)=>m.role==='assistant')?.content || '');
-                        const judgeBody = { rubric, threshold: (step as any).threshold, transcript: transcriptTurns, lastAssistant };
+                        const judgeBody = { rubric, threshold: (step as any).threshold, transcript: transcriptTurns, lastAssistant, scope };
                         const judgeResp = await fetch(judgeUrl, {
                           method:'POST',
                           headers: { 'content-type': 'application/json' },
