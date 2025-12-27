@@ -1,0 +1,32 @@
+# Codecov configuration
+# https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  # Set thresholds for pass/fail and badge colors
+  status:
+    project:
+      default:
+        target: 80%      # Target coverage (green if >= 80%)
+        threshold: 2%    # Allow 2% drop before failing
+    patch:
+      default:
+        target: 80%      # New code should have 80%+ coverage
+
+  # Badge color ranges: "min...max"
+  # - Below min (60%) = red
+  # - Between 60-80% = gradient red to yellow
+  # - Above 80% (midpoint) = green
+  # At 82%, this will show as GREEN
+  range: "60...80"
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true
+
+# Ignore certain paths from coverage
+ignore:
+  - "src/models/**/*"
+  - "src/routes/**/*"
+  - "**/*.spec.ts"
+  - "coverage/**/*"
