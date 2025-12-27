@@ -605,14 +605,39 @@ We use [Vitest](https://vitest.dev/) as our test framework with V8 for coverage.
 Coverage is automatically tracked and displayed via [Codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs). The badge at the top of this README updates automatically with each push to `main`.
 
 **Minimum thresholds enforced in CI:**
-- Statements: 65%
-- Branches: 55%  
-- Functions: 70%
-- Lines: 65%
+- Statements: 80%
+- Branches: 70%  
+- Functions: 80%
+- Lines: 80%
+
+---
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START -->
+<a href="https://github.com/lamdis-ai/lamdis-runs/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=lamdis-ai/lamdis-runs" />
+</a>
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+Made with [contrib.rocks](https://contrib.rocks).
 
 ---
 
 ## Contributing / Questions
+
+**lamdis-runs** is open source and welcomes contributions from the community! This project exists thanks to all the people who contribute.
+
+### How to Contribute
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Write tests** for your changes (we maintain 80%+ coverage)
+4. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+5. **Push** to the branch (`git push origin feature/amazing-feature`)
+6. **Open** a Pull Request
+
+### Reporting Issues
 
 Open an issue with:
 
@@ -621,3 +646,20 @@ Open an issue with:
 * The behavior you expected vs observed.
 
 We'll extend the docs/examples to cover your case.
+
+---
+
+## Acknowledgments
+
+This project is made possible by the open source community. Special thanks to:
+
+- All our [contributors](https://github.com/lamdis-ai/lamdis-runs/graphs/contributors) who have helped improve this project
+- The [Vitest](https://vitest.dev/) team for the excellent testing framework
+- The broader AI/ML community for inspiring better testing practices for LLM applications
+
+---
+
+## License
+
+[MIT](LICENSE) © Lamdis AI
+
