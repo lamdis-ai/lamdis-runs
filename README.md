@@ -1,10 +1,9 @@
 # lamdis-runs 🚦🤖
 
 [![GitHub stars](https://img.shields.io/github/stars/lamdis-ai/lamdis-runs?style=social)](https://github.com/lamdis-ai/lamdis-runs)
-[![npm version](https://img.shields.io/npm/v/lamdis-runs.svg)](https://www.npmjs.com/package/lamdis-runs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml/badge.svg)](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs/branch/main/graph/badge.svg)](https://codecov.io/gh/lamdis-ai/lamdis-runs)
+[![codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs/graph/badge.svg)](https://codecov.io/gh/lamdis-ai/lamdis-runs)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
 
