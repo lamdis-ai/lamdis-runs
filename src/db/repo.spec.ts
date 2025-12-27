@@ -232,5 +232,291 @@ describe('repo', () => {
       // On duplicate key (11000), it should NOT call updateOne (that's the behavior)
       expect(UsageModel.create).toHaveBeenCalled();
     });
+
+    it('createOrUpdateUsage calls updateOne on non-duplicate error', async () => {
+      const { UsageModel } = await import('../models/Usage.js');
+      const otherError = new Error('Other error') as any;
+      otherError.code = 12345; // Not duplicate key
+      (UsageModel.create as ReturnType<typeof vi.fn>).mockRejectedValue(otherError);
+      (UsageModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 1 });
+
+      const { repo } = await import('./repo.js');
+      await repo.createOrUpdateUsage('run-1', { tokens: 300 });
+
+      expect(UsageModel.create).toHaveBeenCalled();
+      expect(UsageModel.updateOne).toHaveBeenCalledWith(
+        { runId: 'run-1' },
+        { $set: { tokens: 300 } },
+        { upsert: true }
+      );
+    });
+  });
+});
+
+// ============ Postgres path tests ============
+describe('repo (Postgres)', () => {
+  // Create mock functions that we can track
+  const mockFindUniqueSuite = vi.fn();
+  const mockFindManyTest = vi.fn();
+  const mockFindFirstEnv = vi.fn();
+  const mockFindUniqueOrg = vi.fn();
+  const mockFindFirstPersona = vi.fn();
+  const mockFindFirstRequest = vi.fn();
+  const mockCreateTestRun = vi.fn();
+  const mockUpdateTestRun = vi.fn();
+  const mockFindUniqueTestRun = vi.fn();
+  const mockCreateUsage = vi.fn();
+  const mockUpdateUsage = vi.fn();
+
+  // Class-based mock for PrismaClient
+  class MockPrismaClient {
+    testSuite = { findUnique: mockFindUniqueSuite };
+    test = { findMany: mockFindManyTest };
+    environment = { findFirst: mockFindFirstEnv };
+    organization = { findUnique: mockFindUniqueOrg };
+    persona = { findFirst: mockFindFirstPersona };
+    request = { findFirst: mockFindFirstRequest };
+    testRun = { create: mockCreateTestRun, update: mockUpdateTestRun, findUnique: mockFindUniqueTestRun };
+    usage = { create: mockCreateUsage, update: mockUpdateUsage };
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    // Enable Postgres mode
+    process.env.DB_PROVIDER = 'postgres';
+    
+    // Mock @prisma/client with a proper class
+    vi.doMock('@prisma/client', () => ({
+      PrismaClient: MockPrismaClient,
+    }));
+  });
+
+  afterEach(() => {
+    delete process.env.DB_PROVIDER;
+    delete process.env.DATABASE_URL;
+  });
+
+  describe('isPg detection', () => {
+    it('returns true when DB_PROVIDER=postgres', async () => {
+      process.env.DB_PROVIDER = 'postgres';
+      const { repo } = await import('./repo.js');
+      expect(repo.isPg()).toBe(true);
+    });
+
+    it('returns true when DB_PROVIDER=POSTGRES (case insensitive)', async () => {
+      process.env.DB_PROVIDER = 'POSTGRES';
+      const { repo } = await import('./repo.js');
+      expect(repo.isPg()).toBe(true);
+    });
+
+    it('returns true when DATABASE_URL starts with postgres', async () => {
+      delete process.env.DB_PROVIDER;
+      process.env.DATABASE_URL = 'postgres://localhost:5432/test';
+      const { repo } = await import('./repo.js');
+      expect(repo.isPg()).toBe(true);
+    });
+
+    it('returns true when DATABASE_URL starts with POSTGRES (case insensitive)', async () => {
+      delete process.env.DB_PROVIDER;
+      process.env.DATABASE_URL = 'POSTGRES://localhost:5432/test';
+      const { repo } = await import('./repo.js');
+      expect(repo.isPg()).toBe(true);
+    });
+  });
+
+  describe('Postgres operations', () => {
+    it('getSuiteById uses Prisma findUnique', async () => {
+      mockFindUniqueSuite.mockResolvedValue({ id: 'suite-1', name: 'Test Suite' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getSuiteById('suite-1');
+
+      expect(mockFindUniqueSuite).toHaveBeenCalledWith({ where: { id: 'suite-1' } });
+      expect(result).toEqual({ id: 'suite-1', name: 'Test Suite' });
+    });
+
+    it('getTests uses Prisma findMany', async () => {
+      mockFindManyTest.mockResolvedValue([{ id: 'test-1' }, { id: 'test-2' }]);
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getTests({ orgId: 'org-1', suiteId: 'suite-1' });
+
+      expect(mockFindManyTest).toHaveBeenCalledWith({
+        where: { orgId: 'org-1', suiteId: 'suite-1' }
+      });
+      expect(result).toHaveLength(2);
+    });
+
+    it('getTests uses Prisma findMany with ids filter', async () => {
+      mockFindManyTest.mockResolvedValue([{ id: 'test-1' }]);
+      
+      const { repo } = await import('./repo.js');
+      await repo.getTests({ orgId: 'org-1', suiteId: 'suite-1', ids: ['test-1', 'test-2'] });
+
+      expect(mockFindManyTest).toHaveBeenCalledWith({
+        where: { orgId: 'org-1', suiteId: 'suite-1', id: { in: ['test-1', 'test-2'] } }
+      });
+    });
+
+    it('getEnvironment uses Prisma findFirst', async () => {
+      mockFindFirstEnv.mockResolvedValue({ id: 'env-1', name: 'Production' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getEnvironment('org-1', 'suite-1', 'env-1');
+
+      expect(mockFindFirstEnv).toHaveBeenCalledWith({
+        where: { id: 'env-1', orgId: 'org-1', suiteId: 'suite-1' }
+      });
+      expect(result).toEqual({ id: 'env-1', name: 'Production' });
+    });
+
+    it('getOrganizationById uses Prisma findUnique', async () => {
+      mockFindUniqueOrg.mockResolvedValue({ id: 'org-1', name: 'Test Org' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getOrganizationById('org-1');
+
+      expect(mockFindUniqueOrg).toHaveBeenCalledWith({ where: { id: 'org-1' } });
+      expect(result).toEqual({ id: 'org-1', name: 'Test Org' });
+    });
+
+    it('getPersona uses Prisma findFirst', async () => {
+      mockFindFirstPersona.mockResolvedValue({ id: 'persona-1', name: 'Helper' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getPersona('org-1', 'persona-1');
+
+      expect(mockFindFirstPersona).toHaveBeenCalledWith({
+        where: { id: 'persona-1', orgId: 'org-1' }
+      });
+      expect(result).toEqual({ id: 'persona-1', name: 'Helper' });
+    });
+
+    it('getRequest uses Prisma findFirst', async () => {
+      mockFindFirstRequest.mockResolvedValue({ id: 'req-1', reqKey: 'key-1' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getRequest('org-1', 'key-1');
+
+      expect(mockFindFirstRequest).toHaveBeenCalledWith({
+        where: { orgId: 'org-1', reqKey: 'key-1' }
+      });
+      expect(result).toEqual({ id: 'req-1', reqKey: 'key-1' });
+    });
+
+    it('createTestRun uses Prisma create', async () => {
+      const created = { id: 'run-1', orgId: 'org-1', suiteId: 'suite-1', status: 'queued' };
+      mockCreateTestRun.mockResolvedValue(created);
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.createTestRun({
+        orgId: 'org-1',
+        suiteId: 'suite-1',
+        envId: 'env-1',
+        connectionKey: 'conn-1',
+        trigger: 'manual',
+        status: 'running',
+        startedAt: new Date('2024-01-01'),
+        finishedAt: null,
+      });
+
+      expect(mockCreateTestRun).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orgId: 'org-1',
+          suiteId: 'suite-1',
+          envId: 'env-1',
+          connectionKey: 'conn-1',
+          trigger: 'manual',
+          status: 'running',
+        })
+      });
+      expect(result).toEqual(created);
+    });
+
+    it('createTestRun handles missing optional fields', async () => {
+      mockCreateTestRun.mockResolvedValue({ id: 'run-1' });
+      
+      const { repo } = await import('./repo.js');
+      await repo.createTestRun({ orgId: 'org-1', suiteId: 'suite-1' });
+
+      expect(mockCreateTestRun).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orgId: 'org-1',
+          suiteId: 'suite-1',
+          envId: null,
+          connectionKey: null,
+          trigger: 'ci',
+          status: 'queued',
+        })
+      });
+    });
+
+    it('updateTestRun uses Prisma update', async () => {
+      mockUpdateTestRun.mockResolvedValue({ id: 'run-1', status: 'passed' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.updateTestRun('run-1', { status: 'passed', finishedAt: new Date() });
+
+      expect(mockUpdateTestRun).toHaveBeenCalledWith({
+        where: { id: 'run-1' },
+        data: expect.objectContaining({ status: 'passed' })
+      });
+      expect(result).toEqual({ id: 'run-1', status: 'passed' });
+    });
+
+    it('getTestRunById uses Prisma findUnique', async () => {
+      mockFindUniqueTestRun.mockResolvedValue({ id: 'run-1', status: 'passed' });
+      
+      const { repo } = await import('./repo.js');
+      const result = await repo.getTestRunById('run-1');
+
+      expect(mockFindUniqueTestRun).toHaveBeenCalledWith({ where: { id: 'run-1' } });
+      expect(result).toEqual({ id: 'run-1', status: 'passed' });
+    });
+
+    it('createOrUpdateUsage creates usage via Prisma', async () => {
+      mockCreateUsage.mockResolvedValue({ runId: 'run-1', tokens: 100 });
+      
+      const { repo } = await import('./repo.js');
+      await repo.createOrUpdateUsage('run-1', { tokens: 100 });
+
+      expect(mockCreateUsage).toHaveBeenCalledWith({
+        data: { runId: 'run-1', tokens: 100 }
+      });
+    });
+
+    it('createOrUpdateUsage updates on create failure', async () => {
+      mockCreateUsage.mockRejectedValue(new Error('Unique constraint'));
+      mockUpdateUsage.mockResolvedValue({ runId: 'run-1', tokens: 200 });
+      
+      const { repo } = await import('./repo.js');
+      await repo.createOrUpdateUsage('run-1', { tokens: 200 });
+
+      expect(mockCreateUsage).toHaveBeenCalled();
+      expect(mockUpdateUsage).toHaveBeenCalledWith({
+        where: { runId: 'run-1' },
+        data: { tokens: 200 }
+      });
+    });
+  });
+
+  describe('getPrisma error handling', () => {
+    it('throws error when @prisma/client is not installed', async () => {
+      vi.doMock('@prisma/client', () => {
+        throw new Error('Cannot find module');
+      });
+      
+      const { repo } = await import('./repo.js');
+      await expect(repo.getSuiteById('suite-1')).rejects.toThrow('postgres_not_enabled');
+    });
+
+    it('throws error when PrismaClient is not exported', async () => {
+      vi.doMock('@prisma/client', () => ({}));
+      
+      const { repo } = await import('./repo.js');
+      // Vitest throws its own error when PrismaClient is missing from the mock
+      await expect(repo.getSuiteById('suite-1')).rejects.toThrow();
+    });
   });
 });

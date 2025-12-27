@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { judgeBodySchema, judgeConversation } from './judgeService.js';
 
+// Mock cross-fetch
+vi.mock('cross-fetch', () => ({
+  default: vi.fn(),
+}));
+
+// Mock bedrockChatOnce
+vi.mock('../lib/bedrockRuntime.js', () => ({
+  bedrockChatOnce: vi.fn(),
+}));
+
 describe('judgeService', () => {
   describe('judgeBodySchema', () => {
     it('validates minimal valid body', () => {
@@ -305,6 +315,282 @@ describe('judgeService', () => {
       
       // Should fail because lastAssistant doesn't contain billing/payment
       expect(result.pass).toBe(false);
+    });
+  });
+
+  describe('judgeConversation with OpenAI', () => {
+    const originalEnv = process.env;
+
+    beforeEach(async () => {
+      vi.resetModules();
+      process.env = { ...originalEnv };
+      process.env.OPENAI_API_KEY = 'test-api-key';
+      delete process.env.JUDGE_PROVIDER;
+      vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('calls OpenAI API and returns parsed result', async () => {
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                pass: true,
+                score: 0.9,
+                threshold: 0.75,
+                reasoning: 'Good response',
+              }),
+            },
+          }],
+        })),
+      });
+
+      const body = {
+        rubric: 'Test rubric',
+        transcript: [],
+        lastAssistant: 'Test response',
+      };
+
+      const result = await judgeConversation(body);
+
+      expect(fetch).toHaveBeenCalled();
+      expect(result.pass).toBe(true);
+      expect(result.score).toBe(0.9);
+      expect(result.reasoning).toBe('Good response');
+    });
+
+    it('returns error on API failure', async () => {
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        text: () => Promise.resolve('Rate limit exceeded'),
+      });
+
+      const body = {
+        rubric: 'Test rubric',
+        transcript: [],
+        lastAssistant: 'Test response',
+      };
+
+      const result = await judgeConversation(body);
+
+      expect(result.pass).toBe(false);
+      expect(result.reasoning).toContain('judge_error');
+    });
+
+    it('returns parse failed on invalid JSON', async () => {
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{
+            message: {
+              content: 'Not valid JSON at all',
+            },
+          }],
+        })),
+      });
+
+      const body = {
+        rubric: 'Test rubric',
+        transcript: [],
+        lastAssistant: 'Test response',
+      };
+
+      const result = await judgeConversation(body);
+
+      expect(result.pass).toBe(false);
+      expect(result.reasoning).toBe('judge_parse_failed');
+    });
+
+    it('handles JSON wrapped in markdown code blocks', async () => {
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{
+            message: {
+              content: '```json\n{"pass": true, "score": 0.85, "reasoning": "Good"}\n```',
+            },
+          }],
+        })),
+      });
+
+      const body = {
+        rubric: 'Test rubric',
+        transcript: [],
+        lastAssistant: 'Test response',
+      };
+
+      const result = await judgeConversation(body);
+
+      expect(result.pass).toBe(true);
+      expect(result.score).toBe(0.85);
+    });
+
+    it('uses temperature from env when set', async () => {
+      process.env.OPENAI_TEMPERATURE = '0.5';
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ pass: true, score: 0.8, reasoning: 'ok' }) } }],
+        })),
+      });
+
+      const body = { rubric: 'Test', transcript: [], lastAssistant: 'Test' };
+      await judgeConversation(body);
+
+      expect(fetch).toHaveBeenCalled();
+      const callArgs = fetch.mock.calls[0];
+      const requestBody = JSON.parse(callArgs[1].body);
+      expect(requestBody.temperature).toBe(0.5);
+    });
+
+    it('sets temperature to 1 when env is 0', async () => {
+      process.env.OPENAI_TEMPERATURE = '0';
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ pass: true, score: 0.8, reasoning: 'ok' }) } }],
+        })),
+      });
+
+      const body = { rubric: 'Test', transcript: [], lastAssistant: 'Test' };
+      await judgeConversation(body);
+
+      const callArgs = fetch.mock.calls[0];
+      const requestBody = JSON.parse(callArgs[1].body);
+      expect(requestBody.temperature).toBe(1);
+    });
+
+    it('defaults threshold when missing from response', async () => {
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ pass: true, reasoning: 'Good' }) } }],
+        })),
+      });
+
+      const body = { rubric: 'Test', threshold: 0.6, transcript: [], lastAssistant: 'Test' };
+      const result = await judgeConversation(body);
+
+      expect(result.threshold).toBe(0.6);
+      expect(result.score).toBe(0.6); // Defaults to threshold when pass is true
+    });
+
+    it('defaults score to 0 when pass is false', async () => {
+      const fetch = (await import('cross-fetch')).default as ReturnType<typeof vi.fn>;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ pass: false, reasoning: 'Bad' }) } }],
+        })),
+      });
+
+      const body = { rubric: 'Test', threshold: 0.6, transcript: [], lastAssistant: 'Test' };
+      const result = await judgeConversation(body);
+
+      expect(result.score).toBe(0);
+    });
+  });
+
+  describe('judgeConversation with Bedrock', () => {
+    const originalEnv = process.env;
+
+    beforeEach(async () => {
+      vi.resetModules();
+      process.env = { ...originalEnv };
+      process.env.JUDGE_PROVIDER = 'bedrock';
+      delete process.env.OPENAI_API_KEY;
+      vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('calls bedrock and returns parsed result', async () => {
+      const { bedrockChatOnce } = await import('../lib/bedrockRuntime.js');
+      (bedrockChatOnce as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        JSON.stringify({ pass: true, score: 0.9, threshold: 0.75, reasoning: 'Bedrock judge passed' })
+      );
+
+      const body = {
+        rubric: 'Test rubric',
+        transcript: [],
+        lastAssistant: 'Test response',
+      };
+
+      const result = await judgeConversation(body);
+
+      expect(bedrockChatOnce).toHaveBeenCalled();
+      expect(result.pass).toBe(true);
+      expect(result.score).toBe(0.9);
+      expect(result.reasoning).toBe('Bedrock judge passed');
+    });
+
+    it('handles bedrock response with markdown code blocks', async () => {
+      const { bedrockChatOnce } = await import('../lib/bedrockRuntime.js');
+      (bedrockChatOnce as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        '```json\n{"pass": true, "score": 0.8, "reasoning": "Good"}\n```'
+      );
+
+      const body = { rubric: 'Test', transcript: [], lastAssistant: 'Test' };
+      const result = await judgeConversation(body);
+
+      expect(result.pass).toBe(true);
+      expect(result.score).toBe(0.8);
+    });
+
+    it('returns error on bedrock failure', async () => {
+      const { bedrockChatOnce } = await import('../lib/bedrockRuntime.js');
+      (bedrockChatOnce as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Bedrock unavailable'));
+
+      const body = { rubric: 'Test', transcript: [], lastAssistant: 'Test' };
+      const result = await judgeConversation(body);
+
+      expect(result.pass).toBe(false);
+      expect(result.reasoning).toContain('judge_error');
+      expect(result.reasoning).toContain('Bedrock unavailable');
+    });
+
+    it('uses custom model ID from env', async () => {
+      process.env.BEDROCK_JUDGE_MODEL_ID = 'custom-model';
+      const { bedrockChatOnce } = await import('../lib/bedrockRuntime.js');
+      (bedrockChatOnce as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        JSON.stringify({ pass: true, score: 0.7, reasoning: 'ok' })
+      );
+
+      const body = { rubric: 'Test', transcript: [], lastAssistant: 'Test' };
+      await judgeConversation(body);
+
+      expect(bedrockChatOnce).toHaveBeenCalledWith(
+        expect.objectContaining({ modelId: 'custom-model' })
+      );
+    });
+
+    it('uses custom temperature from env', async () => {
+      process.env.BEDROCK_JUDGE_TEMPERATURE = '0.5';
+      const { bedrockChatOnce } = await import('../lib/bedrockRuntime.js');
+      (bedrockChatOnce as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        JSON.stringify({ pass: true, score: 0.7, reasoning: 'ok' })
+      );
+
+      const body = { rubric: 'Test', transcript: [], lastAssistant: 'Test' };
+      await judgeConversation(body);
+
+      expect(bedrockChatOnce).toHaveBeenCalledWith(
+        expect.objectContaining({ temperature: 0.5 })
+      );
     });
   });
 });
