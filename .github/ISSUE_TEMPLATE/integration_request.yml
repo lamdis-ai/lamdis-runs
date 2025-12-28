@@ -1,0 +1,118 @@
+name: 🔌 Integration Request
+description: Request support for a new CI provider, LLM provider, or external integration
+title: "[Integration]: "
+labels: ["integration", "enhancement", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for requesting a new integration! Please provide details about your environment and requirements.
+
+  - type: dropdown
+    id: integration-type
+    attributes:
+      label: Integration Type
+      description: What type of integration are you requesting?
+      options:
+        - CI/CD Provider (e.g., GitLab CI, CircleCI, Jenkins)
+        - LLM Provider (e.g., Anthropic, Google AI, Azure OpenAI)
+        - Database Backend
+        - Chat/Assistant Protocol
+        - Notification/Webhook
+        - Observability/Monitoring
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: integration-name
+    attributes:
+      label: Integration Name
+      description: What is the specific service/provider you want integrated?
+      placeholder: "e.g., GitLab CI, Anthropic Claude, Azure OpenAI"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Describe your use case and why this integration is important for your workflow.
+      placeholder: We use X for our CI/CD and need lamdis-runs to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repo-size
+    attributes:
+      label: Repository / Team Context
+      description: |
+        Help us understand the scale of your use case.
+      placeholder: |
+        - Approximate repo size (number of tests, suites)
+        - Team size using lamdis-runs
+        - Number of CI runs per day/week
+        - Any relevant architecture details
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints & Requirements
+      description: |
+        List any technical constraints, compliance requirements, or specific needs.
+      placeholder: |
+        - Must support self-hosted/on-prem deployment
+        - Need to work behind corporate proxy
+        - Compliance requirement: data must stay in region X
+        - Must authenticate via SAML/SSO
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-docs
+    attributes:
+      label: API Documentation / Resources
+      description: |
+        Link to relevant API documentation, SDKs, or resources that would help implement this integration.
+      placeholder: |
+        - API docs: https://...
+        - SDK: https://...
+        - Example implementation: https://...
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current Workaround
+      description: How are you currently handling this? Is there a manual workaround?
+      placeholder: Currently we work around this by...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: urgency
+    attributes:
+      label: Urgency
+      options:
+        - Low - exploring options
+        - Medium - planning to adopt soon
+        - High - actively blocked
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution & Validation
+      options:
+        - label: I would be willing to help implement or test this integration
+          required: false
+        - label: I can provide access to a test environment for validation
+          required: false
+        - label: I have searched existing issues to ensure this hasn't already been requested
+          required: true

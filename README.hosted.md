@@ -13,9 +13,18 @@ For local JSON-first (non-persistent) usage, see the main `README.md`.
 ## Requirements
 
 - **Node.js** 20+ (if running from source) or Docker runtime.
-- **MongoDB** 6+ for persisting organizations, suites, tests, and testruns.
+- **Database** (one of):
+  - **MongoDB** 6+ for persisting organizations, suites, tests, and testruns.
+  - **PostgreSQL** 14+ as an alternative to MongoDB (via Prisma).
 
-Hosted/persistent mode is enabled simply by **setting `MONGO_URL` and running the Mongo-backed APIs**. If you never set `MONGO_URL` and only use `npm run run-file`, lamdis‑runs stays in JSON-only, non-persistent mode.
+Hosted/persistent mode is enabled by setting `DB_PROVIDER` and the appropriate connection URL:
+
+| Mode | `DB_PROVIDER` | Connection Variable | Setup |
+|------|---------------|---------------------|-------|
+| MongoDB | `mongo` | `MONGO_URL` | Just set the URL |
+| PostgreSQL | `postgres` | `DATABASE_URL` | Run `npx prisma generate && npx prisma db push` |
+
+If you only use `npm run run-file` and set `DB_PROVIDER=local` (or don't set any DB vars), lamdis‑runs stays in JSON-only, non-persistent mode.
 
 ---
 
@@ -32,14 +41,39 @@ Hosted/persistent mode is enabled simply by **setting `MONGO_URL` and running th
 
 Key environment variables for hosted mode:
 
-| Variable         | Description                                      | Default                             |
-|------------------|--------------------------------------------------|-------------------------------------|
-| `MONGO_URL`      | Mongo connection URL                             | `mongodb://localhost:27017/lamdis`  |
-| `PORT`           | HTTP port                                       | `3101`                              |
-| `LAMDIS_API_TOKEN` | Static token to protect `/internal/*` endpoints | —                                   |
-| `LAMDIS_HMAC_SECRET` | Optional HMAC for `/internal`                  | —                                   |
-| `OPENAI_API_KEY` | Enables OpenAI-based judge                       | —                                   |
-| `JUDGE_BASE_URL` | Optional external judge service                  | self                                |
+| Variable           | Description                                        | Default                             |
+|--------------------|---------------------------------------------------|-------------------------------------|
+| `DB_PROVIDER`      | Storage backend: `local`, `mongo`, or `postgres`   | auto-detect                         |
+| `MONGO_URL`        | MongoDB connection URL (when `DB_PROVIDER=mongo`)  | `mongodb://localhost:27017/lamdis`  |
+| `DATABASE_URL`     | PostgreSQL connection (when `DB_PROVIDER=postgres`)| —                                   |
+| `PORT`             | HTTP port                                         | `3101`                              |
+| `LAMDIS_API_TOKEN` | Static token to protect `/internal/*` endpoints   | —                                   |
+| `LAMDIS_HMAC_SECRET` | Optional HMAC for `/internal`                    | —                                   |
+| `OPENAI_API_KEY`   | Enables OpenAI-based judge                        | —                                   |
+| `JUDGE_BASE_URL`   | Optional external judge service                   | self                                |
+
+### PostgreSQL Setup
+
+To use PostgreSQL instead of MongoDB:
+
+```bash
+# 1. Set environment variables
+export DB_PROVIDER=postgres
+export DATABASE_URL="postgresql://user:password@localhost:5432/lamdis"
+
+# 2. Generate Prisma client and create tables
+npx prisma generate
+npx prisma db push
+
+# 3. Start the server
+npm run dev
+```
+
+Or use Docker Compose:
+
+```bash
+docker-compose --profile postgres up
+```
 
 You can also configure Bedrock/OpenAI models as documented in `README.md` under **Models and judge (optional)**.
 
@@ -117,9 +151,11 @@ Cooperatively stop an in-progress run.
 
 ---
 
-## Reading results from Mongo
+## Reading results from the database
 
-Given a `runId` from `/internal/runs/start`, query `testruns`:
+Given a `runId` from `/internal/runs/start`, query the database:
+
+### MongoDB
 
 ```javascript
 // summary
@@ -132,6 +168,20 @@ const run = db.testruns.findOne({ _id: ObjectId("<runId>") })
 db.testruns.find({}, { status: 1, finishedAt: 1, totals: 1 })
   .sort({ finishedAt: -1 })
   .limit(5)
+```
+
+### PostgreSQL
+
+```sql
+-- summary
+SELECT id, "orgId", "suiteId", status, "startedAt", "finishedAt", totals
+FROM test_runs WHERE id = '<runId>';
+
+-- recent 5 runs
+SELECT id, status, "finishedAt", totals
+FROM test_runs
+ORDER BY "finishedAt" DESC
+LIMIT 5;
 ```
 
 Important fields:

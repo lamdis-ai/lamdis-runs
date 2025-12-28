@@ -4,8 +4,12 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/lamdis-ai/lamdis-runs/blob/main/LICENSE)
 [![CI](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml/badge.svg)](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs/graph/badge.svg)](https://codecov.io/gh/lamdis-ai/lamdis-runs)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/XXXX/badge)](https://www.bestpractices.dev/projects/XXXX)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/lamdis-ai/lamdis-runs/badge)](https://securityscorecards.dev/viewer/?uri=github.com/lamdis-ai/lamdis-runs)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
+
+![lamdis-runs](readme_hero.webp)
 
 **lamdis-runs** is an open-source test runner for **AI assistants and agents**. It runs entirely on its own so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
 
@@ -48,10 +52,18 @@ If you are searching for a *"test framework for LLM agents", "conversational AI 
 
 * **Node.js** 20+
 
-lamdis‑runs automatically runs in **JSON‑only, non‑persistent mode** unless you explicitly configure Mongo. There is **no separate flag**:
+lamdis‑runs supports three storage modes controlled by the `DB_PROVIDER` environment variable:
 
-- If you only use `npm run run-file` and do **not** set `MONGO_URL`, runs are in‑memory and ephemeral.
-- If you set `MONGO_URL` and use the hosted APIs (`README.hosted.md`), runs and definitions can be persisted in Mongo.
+| Mode | `DB_PROVIDER` | Required Env Var | Description |
+|------|---------------|------------------|-------------|
+| **Local** | `local` | (none) | In-memory/JSON files, ephemeral – ideal for CLI and CI |
+| **MongoDB** | `mongo` | `MONGO_URL` | Persistent storage via MongoDB |
+| **PostgreSQL** | `postgres` | `DATABASE_URL` | Persistent storage via PostgreSQL (Prisma) |
+
+**Auto-detection** (when `DB_PROVIDER` is not set):
+- `DATABASE_URL` starting with `postgres` → PostgreSQL
+- `MONGO_URL` set → MongoDB  
+- Otherwise → Local (JSON-only mode)
 
 ---
 
@@ -118,6 +130,44 @@ npm run run-file -- suites/legal-tests.json
 ```
 
 The container is just the runner binary; your tests, assistants, auth, and suites all stay in JSON under version control.
+
+---
+
+### 3) Docker with PostgreSQL
+
+To run lamdis-runs with PostgreSQL persistence:
+
+```bash
+# Start with PostgreSQL profile
+docker-compose --profile postgres up
+
+# Or manually:
+docker run --rm -p 3101:3101 \
+  -e DB_PROVIDER=postgres \
+  -e DATABASE_URL="postgresql://user:pass@host:5432/lamdis" \
+  -e LAMDIS_API_TOKEN="changeme" \
+  lamdis-runs:local
+```
+
+For PostgreSQL, you'll need to run Prisma migrations first:
+
+```bash
+# Generate Prisma client and push schema
+npx prisma generate
+npx prisma db push
+```
+
+---
+
+### 4) Docker with MongoDB
+
+To run lamdis-runs with MongoDB persistence (default docker-compose):
+
+```bash
+docker-compose up
+```
+
+This starts both MongoDB and lamdis-runs connected to it.
 
 ---
 
@@ -362,7 +412,9 @@ Configure via environment variables.
 
 | Variable                                                              | Description                                                             | Default                            |
 | --------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
-| `MONGO_URL`                                                           | Optional Mongo connection (enables hosted/persistent mode)              | `mongodb://localhost:27017/lamdis` |
+| `DB_PROVIDER`                                                         | Storage mode: `local`, `mongo`, or `postgres`                           | auto-detect                        |
+| `MONGO_URL`                                                           | MongoDB connection (required when `DB_PROVIDER=mongo`)                  | `mongodb://localhost:27017/lamdis` |
+| `DATABASE_URL`                                                        | PostgreSQL connection (required when `DB_PROVIDER=postgres`)            | —                                  |
 | `PORT`                                                                | HTTP port                                                               | `3101`                             |
 | `LAMDIS_API_TOKEN`                                                    | Static token to protect `/internal` endpoints                           | —                                  |
 | `LAMDIS_HMAC_SECRET`                                                  | Optional HMAC for `/internal` (sha256 over `${x-timestamp}.${rawBody}`) | —                                  |
@@ -667,6 +719,39 @@ We'll extend the docs/examples to cover your case.
 
 ---
 
+## Security
+
+We take security seriously. See [SECURITY.md](SECURITY.md) for:
+
+- How to report vulnerabilities (please use [private reporting](https://github.com/lamdis-ai/lamdis-runs/security/advisories/new))
+- Supported versions
+- Security best practices for deployment
+
+This project uses:
+- **Dependabot** for automated dependency updates
+- **CodeQL** for static analysis and vulnerability detection
+- **OpenSSF Scorecard** for security posture assessment
+
+---
+
+## Citing lamdis-runs
+
+If you use lamdis-runs in your research or project, please cite it:
+
+```bibtex
+@software{lamdis_runs,
+  title = {lamdis-runs: An Open-Source Test Runner for AI Assistants and Agents},
+  author = {Lamdis AI},
+  year = {2024},
+  url = {https://github.com/lamdis-ai/lamdis-runs},
+  license = {Apache-2.0}
+}
+```
+
+See [CITATION.cff](CITATION.cff) for more citation formats.
+
+---
+
 ## Acknowledgments
 
 This project is made possible by the open source community. Special thanks to:
@@ -679,5 +764,5 @@ This project is made possible by the open source community. Special thanks to:
 
 ## License
 
-[MIT](LICENSE) © Lamdis AI
+[Apache 2.0](LICENSE) © Lamdis AI
 

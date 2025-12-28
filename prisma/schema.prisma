@@ -1,0 +1,171 @@
+// Prisma schema for lamdis-runs PostgreSQL support
+// 
+// To use PostgreSQL:
+//   1. Set DATABASE_URL in your .env (e.g., postgresql://user:pass@localhost:5432/lamdis)
+//   2. Run: npx prisma generate
+//   3. Run: npx prisma db push (or prisma migrate dev for production)
+//   4. Set DB_PROVIDER=postgres (or just have DATABASE_URL set)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  testSuites   TestSuite[]
+  tests        Test[]
+  environments Environment[]
+  personas     Persona[]
+  requests     Request[]
+  testRuns     TestRun[]
+
+  @@map("organizations")
+}
+
+model TestSuite {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tests        Test[]
+  environments Environment[]
+  testRuns     TestRun[]
+
+  @@index([orgId])
+  @@map("test_suites")
+}
+
+model Test {
+  id          String   @id @default(cuid())
+  orgId       String
+  suiteId     String
+  name        String
+  description String?
+  tags        String[] @default([])
+  priority    String?  @default("p2")
+  enabled     Boolean  @default(true)
+  config      Json?    // Test configuration (messages, assertions, etc.)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  testSuite    TestSuite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([suiteId])
+  @@map("tests")
+}
+
+model Environment {
+  id          String   @id @default(cuid())
+  orgId       String
+  suiteId     String
+  name        String
+  description String?
+  config      Json?    // Environment-specific configuration
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  testSuite    TestSuite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  testRuns     TestRun[]
+
+  @@index([orgId])
+  @@index([suiteId])
+  @@map("environments")
+}
+
+model Persona {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  userProfile Json?    // Persona attributes (ageRange, jurisdiction, segment, etc.)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("personas")
+}
+
+model Request {
+  id          String   @id @default(cuid())
+  orgId       String
+  reqKey      String   // Unique key within org (e.g., "accounts.create_test")
+  name        String?
+  description String?
+  config      Json?    // Request configuration (method, url, headers, body, etc.)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, reqKey])
+  @@index([orgId])
+  @@map("requests")
+}
+
+model TestRun {
+  id            String    @id @default(cuid())
+  orgId         String
+  suiteId       String
+  envId         String?
+  connectionKey String?
+  trigger       String    @default("manual") // manual, schedule, ci
+  status        String    @default("queued") // queued, running, passed, failed, partial, stopped
+  stopRequested Boolean   @default(false)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  gitContext    Json?     // Git metadata (branch, sha, etc.)
+  totals        Json?     // Run totals (passed, failed, skipped counts)
+  summaryScore  Float?
+  progress      Json?     // Progress info (current test, percentage, etc.)
+  judge         Json?     // Judge configuration/results
+  items         Json?     // Array of RunItem objects (test results)
+  error         Json?     // Error details if run failed
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  testSuite    TestSuite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  environment  Environment? @relation(fields: [envId], references: [id], onDelete: SetNull)
+  usage        Usage?
+
+  @@index([orgId])
+  @@index([suiteId])
+  @@index([status])
+  @@map("test_runs")
+}
+
+model Usage {
+  id              String   @id @default(cuid())
+  runId           String   @unique
+  promptTokens    Int      @default(0)
+  completionTokens Int     @default(0)
+  totalTokens     Int      @default(0)
+  judgeTokens     Int      @default(0)
+  apiCalls        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  testRun TestRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@map("usage")
+}

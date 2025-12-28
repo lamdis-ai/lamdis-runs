@@ -1,0 +1,48 @@
+# OpenSSF Scorecard workflow for lamdis-runs
+# https://github.com/ossf/scorecard
+# This workflow generates a security score for the project
+
+name: OpenSSF Scorecard
+
+on:
+  # Run on pushes to main branch
+  push:
+    branches: ["main"]
+  # Run weekly on Sundays
+  schedule:
+    - cron: "0 0 * * 0"
+  # Allow manual trigger
+  workflow_dispatch:
+
+# Declare default permissions as read only
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed to upload the results to code-scanning dashboard
+      security-events: write
+      # Needed to publish results and get a badge
+      id-token: write
+
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Run analysis"
+        uses: ossf/scorecard-action@v2.4.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publish results to OpenSSF REST API for badge generation
+          publish_results: true
+
+      # Upload to GitHub Code Scanning
+      - name: "Upload to code-scanning"
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

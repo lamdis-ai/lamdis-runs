@@ -1,0 +1,55 @@
+# Citation File Format (CFF) for lamdis-runs
+# https://citation-file-format.github.io/
+# This file helps researchers and developers cite this project properly.
+
+cff-version: 1.2.0
+title: "lamdis-runs"
+message: "If you use this software, please cite it as below."
+type: software
+
+authors:
+  - name: "Lamdis AI"
+    website: "https://lamdis.ai"
+
+repository-code: "https://github.com/lamdis-ai/lamdis-runs"
+url: "https://lamdis.ai"
+license: Apache-2.0
+version: "0.1.0"
+date-released: "2024-01-01"
+
+abstract: >-
+  lamdis-runs is an open-source test runner for AI assistants and agents.
+  It enables teams to author tests, group them into suites, and gate CI/CD
+  against real assistants using semantic checks, LLM judges, and
+  deterministic assertions.
+
+keywords:
+  - "ai testing"
+  - "llm testing"
+  - "conversational ai"
+  - "chatbot testing"
+  - "agent testing"
+  - "qa automation"
+  - "llm evaluation"
+  - "assistant testing"
+  - "nlp testing"
+  - "ai quality assurance"
+
+references:
+  - type: software
+    title: "Vitest"
+    url: "https://vitest.dev/"
+    notes: "Testing framework used in development"
+  - type: software
+    title: "Fastify"
+    url: "https://fastify.io/"
+    notes: "Web framework powering the HTTP server"
+
+preferred-citation:
+  type: software
+  title: "lamdis-runs: An Open-Source Test Runner for AI Assistants and Agents"
+  authors:
+    - name: "Lamdis AI"
+  year: 2024
+  url: "https://github.com/lamdis-ai/lamdis-runs"
+  license: Apache-2.0
