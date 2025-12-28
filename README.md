@@ -4,12 +4,11 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/lamdis-ai/lamdis-runs/blob/main/LICENSE)
 [![CI](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml/badge.svg)](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs/graph/badge.svg)](https://codecov.io/gh/lamdis-ai/lamdis-runs)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/XXXX/badge)](https://www.bestpractices.dev/projects/XXXX)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/lamdis-ai/lamdis-runs/badge)](https://securityscorecards.dev/viewer/?uri=github.com/lamdis-ai/lamdis-runs)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
 
-![lamdis-runs](readme_hero.webp)
+![lamdis-runs](.github/readme_hero.webp)
 
 **lamdis-runs** is an open-source test runner for **AI assistants and agents**. It runs entirely on its own so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
 
