@@ -1,7 +1,7 @@
 # lamdis-runs 🚦🤖
 
 [![GitHub stars](https://img.shields.io/github/stars/lamdis-ai/lamdis-runs?style=social)](https://github.com/lamdis-ai/lamdis-runs)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/lamdis-ai/lamdis-runs/blob/main/LICENSE)
 [![CI](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml/badge.svg)](https://github.com/lamdis-ai/lamdis-runs/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/lamdis-ai/lamdis-runs/graph/badge.svg)](https://codecov.io/gh/lamdis-ai/lamdis-runs)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
@@ -37,7 +37,7 @@ If you are searching for a *"test framework for LLM agents", "conversational AI 
 
 ## What it does ⚙️
 
-* Runs suites against your assistant via **HTTP chat** or **OpenAI chat**.
+* Runs suites against your assistant via **HTTP chat**, **OpenAI chat**, or **AWS Bedrock**.
 * Iterates turn‑by‑turn and uses an **LLM judge** for semantic checks (OpenAI/Bedrock).
 * Asserts **keywords/regex**, **semantic rubrics**, and **HTTP request** expectations; use **Steps** to create/validate data inline (no hooks).
 * Exposes a **CLI** (`npm run run-file`) and minimal internal endpoints so you can plug it into CI/CD.
@@ -348,6 +348,18 @@ This is the primary open-source workflow: keep your tests, assistants, auth, and
 
 Configure via environment variables.
 
+### Required for Running Tests
+
+| Variable                | Description                                           | Required When                        |
+| ----------------------- | ----------------------------------------------------- | ------------------------------------ |
+| `LAMDIS_API_TOKEN`      | Static token to protect `/internal` endpoints         | Always (for CLI and API calls)       |
+| `OPENAI_API_KEY`        | OpenAI API key for LLM judge                          | Using OpenAI judge (default)         |
+| `AWS_REGION`            | AWS region for Bedrock                                | Using Bedrock (`JUDGE_PROVIDER=bedrock`) |
+| `AWS_ACCESS_KEY_ID`     | AWS credentials                                       | Using Bedrock (or use IAM roles)     |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials                                       | Using Bedrock (or use IAM roles)     |
+
+### All Environment Variables
+
 | Variable                                                              | Description                                                             | Default                            |
 | --------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
 | `MONGO_URL`                                                           | Optional Mongo connection (enables hosted/persistent mode)              | `mongodb://localhost:27017/lamdis` |
@@ -356,8 +368,15 @@ Configure via environment variables.
 | `LAMDIS_HMAC_SECRET`                                                  | Optional HMAC for `/internal` (sha256 over `${x-timestamp}.${rawBody}`) | —                                  |
 | `LAMDIS_RESULTS_ENABLED`                                              | When `"true"`, write compact per-run JSON summaries under `results/`    | `false` (disabled)                 |
 | `LAMDIS_RESULTS_DIR`                                                  | Optional root directory for local results (overrides `results/`)        | `<cwd>/results`                    |
+| `JUDGE_PROVIDER`                                                      | LLM provider for semantic checks: `openai` (default) or `bedrock`       | `openai`                           |
 | `JUDGE_BASE_URL`                                                      | Override if you run a separate judge service                            | self                               |
-| `OPENAI_API_KEY`, `OPENAI_BASE`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE` | Judge settings                                                          | —                                  |
+| `OPENAI_API_KEY`                                                      | OpenAI API key (required for OpenAI judge)                              | —                                  |
+| `OPENAI_BASE`                                                         | OpenAI API base URL                                                     | `https://api.openai.com/v1`        |
+| `OPENAI_MODEL`                                                        | OpenAI model for judging                                                | `gpt-4o-mini`                      |
+| `OPENAI_TEMPERATURE`                                                  | Temperature for OpenAI judge                                            | `0`                                |
+| `AWS_REGION`                                                          | AWS region for Bedrock calls                                            | `us-east-1`                        |
+| `AWS_ACCESS_KEY_ID`                                                   | AWS credentials for Bedrock                                             | —                                  |
+| `AWS_SECRET_ACCESS_KEY`                                               | AWS credentials for Bedrock                                             | —                                  |
 | `BEDROCK_MODEL_ID`, `BEDROCK_TEMPERATURE`                             | Legacy Bedrock defaults (both chat + judge if no split vars)            | `anthropic.claude-3-haiku-20240307-v1:0`, `0.3` |
 | `BEDROCK_CHAT_MODEL_ID`, `BEDROCK_CHAT_TEMPERATURE`                   | (Optional) Chat simulation override                                     | —                                  |
 | `BEDROCK_JUDGE_MODEL_ID`, `BEDROCK_JUDGE_TEMPERATURE`                 | (Optional) Judge override when `JUDGE_PROVIDER=bedrock`                 | —                                  |
