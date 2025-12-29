@@ -17,14 +17,14 @@
     "prisma:push": "prisma db push"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.938.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.958.0",
     "@prisma/client": "^5.21.1",
     "cross-fetch": "^4.0.0",
     "dotenv": "^17.2.3",
     "fastify": "^4.26.2",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.1.1",
     "mongoose": "^8.8.1",
-    "yaml": "^2.5.1",
+    "yaml": "^2.8.2",
     "zod": "^4.2.1"
   },
   "devDependencies": {
