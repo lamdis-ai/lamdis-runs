@@ -13,6 +13,7 @@ export const judgeBodySchema = z.object({
 });
 
 export type JudgeBody = z.infer<typeof judgeBodySchema>;
+export type JudgeBodyInput = z.input<typeof judgeBodySchema>;
 
 export interface JudgeResult {
   pass: boolean;
@@ -24,9 +25,10 @@ export interface JudgeResult {
   [key: string]: any;
 }
 
-export async function judgeConversation(body: JudgeBody): Promise<JudgeResult> {
-  const threshold = typeof body.threshold === 'number' ? body.threshold : 0.75;
-  const scope = body.scope || 'last';
+export async function judgeConversation(body: JudgeBodyInput): Promise<JudgeResult> {
+  const parsed = judgeBodySchema.parse(body);
+  const threshold = typeof parsed.threshold === 'number' ? parsed.threshold : 0.75;
+  const scope = parsed.scope || 'last';
   const openaiKey = process.env.OPENAI_API_KEY || '';
   const openaiBase = process.env.OPENAI_BASE || 'https://api.openai.com/v1';
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -35,12 +37,12 @@ export async function judgeConversation(body: JudgeBody): Promise<JudgeResult> {
 
   // Determine what text to evaluate based on scope
   const evaluationText = scope === 'transcript' 
-    ? JSON.stringify(body.transcript || [])
-    : String(body.lastAssistant || '');
+    ? JSON.stringify(parsed.transcript || [])
+    : String(parsed.lastAssistant || '');
 
   if (!openaiKey && judgeProvider !== 'bedrock') {
     const text = evaluationText.toLowerCase();
-    const terms = String(body.rubric || '').toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
+    const terms = String(parsed.rubric || '').toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
     const uniq = Array.from(new Set(terms)).slice(0, 20);
     const hits = uniq.filter(t => text.includes(t)).length;
     const score = uniq.length ? Math.min(1, hits / Math.max(3, Math.ceil(uniq.length * 0.3))) : 0.5;
@@ -62,13 +64,13 @@ export async function judgeConversation(body: JudgeBody): Promise<JudgeResult> {
     'Do not include any extra text outside JSON.'
   ].join('\n');
   const user = JSON.stringify({
-    rubric: body.rubric,
+    rubric: parsed.rubric,
     threshold,
-    persona: body.persona,
+    persona: parsed.persona,
     scope,
-    lastAssistant: scope === 'last' ? body.lastAssistant : undefined,
-    transcript: body.transcript,
-    requestNext: !!body.requestNext,
+    lastAssistant: scope === 'last' ? parsed.lastAssistant : undefined,
+    transcript: parsed.transcript,
+    requestNext: !!parsed.requestNext,
   });
 
   let out: any = undefined;

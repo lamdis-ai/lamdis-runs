@@ -42,7 +42,7 @@ export async function runTestFile(body: z.infer<typeof runFileBodySchema>) {
     env: z.object({
       channel: z.enum(['http_chat', 'openai_chat', 'bedrock_chat']).default('http_chat'),
       baseUrl: z.string().optional(),
-      headers: z.record(z.any()).optional(),
+      headers: z.record(z.string(), z.any()).optional(),
       timeoutMs: z.number().optional(),
     }).optional(),
     imports: z.object({

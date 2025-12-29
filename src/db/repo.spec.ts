@@ -73,7 +73,7 @@ describe('repo', () => {
 
   describe('MongoDB operations', () => {
     beforeEach(() => {
-      delete process.env.DB_PROVIDER;
+      process.env.DB_PROVIDER = 'mongo';
       delete process.env.DATABASE_URL;
     });
 
