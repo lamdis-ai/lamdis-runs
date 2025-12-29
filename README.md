@@ -8,7 +8,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
 
-![lamdis-runs](.github/readme_hero.webp)
+<p align="center">
+  <img src=".github/readme_hero.webp" alt="lamdis-runs" width="720" />
+</p>
 
 **lamdis-runs** is an open-source test runner for **AI assistants and agents**. It runs entirely on its own so any team can **author tests**, **group them into suites**, and **gate CI/CD** against real assistants.
 
