@@ -15,7 +15,7 @@ repository-code: "https://github.com/lamdis-ai/lamdis-runs"
 url: "https://lamdis.ai"
 license: Apache-2.0
 version: "0.1.0"
-date-released: "2024-01-01"
+date-released: "2025-01-01"
 
 abstract: >-
   lamdis-runs is an open-source test runner for AI assistants and agents.
@@ -50,6 +50,6 @@ preferred-citation:
   title: "lamdis-runs: An Open-Source Test Runner for AI Assistants and Agents"
   authors:
     - name: "Lamdis AI"
-  year: 2024
+  year: 2025
   url: "https://github.com/lamdis-ai/lamdis-runs"
   license: Apache-2.0

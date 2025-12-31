@@ -743,7 +743,7 @@ If you use lamdis-runs in your research or project, please cite it:
 @software{lamdis_runs,
   title = {lamdis-runs: An Open-Source Test Runner for AI Assistants and Agents},
   author = {Lamdis AI},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/lamdis-ai/lamdis-runs},
   license = {Apache-2.0}
 }
