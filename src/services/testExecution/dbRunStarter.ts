@@ -164,6 +164,21 @@ export async function startDbBackedRun(body: DbRunStartInput) {
         timeoutMs: (envDoc as any)?.timeoutMs,
       }) as EngineContext['environment'];
 
+      // Store assistant metadata in the run for visibility
+      const assistantName = chosenConnKey || (envDoc as any)?.name || undefined;
+      const assistantMeta = {
+        name: assistantName,
+        url: engineEnv.baseUrl,
+        channel: engineEnv.channel,
+      };
+      if (repo.isPg())
+        await repo.updateTestRun(runId, { assistant: assistantMeta });
+      else
+        await (TestRunModel as any).updateOne(
+          { _id: run._id },
+          { $set: { assistant: assistantMeta } },
+        );
+
       const wfUrl = process.env.WORKFLOW_URL;
       const authHeader = body.authHeader || undefined;
       const judgeBase = process.env.JUDGE_BASE_URL || `http://127.0.0.1:${process.env.PORT || 3101}`;
@@ -190,6 +205,7 @@ export async function startDbBackedRun(body: DbRunStartInput) {
 
         engineTests.push({
           _id: String((t as any)._id || (t as any).id),
+          name: (t as any).name || undefined,
           orgId: String((suite as any).orgId),
           suiteId: String((suite as any)._id || (suite as any).id),
           script,
@@ -202,6 +218,49 @@ export async function startDbBackedRun(body: DbRunStartInput) {
           minTurns: (t as any).minTurns,
           judgeConfig: (t as any).judgeConfig,
         });
+      }
+
+      // Extract pending steps from all tests for progress display
+      const pendingSteps: any[] = [];
+      for (const et of engineTests) {
+        const steps = Array.isArray(et.steps) ? et.steps : [];
+        steps.forEach((step: any, idx: number) => {
+          if (step?.type === 'assistant_check') {
+            pendingSteps.push({
+              testId: et._id,
+              testName: et.name,
+              stepIndex: idx,
+              stepType: step.type,
+              stepName: step.name || `Check ${idx + 1}`,
+              rubric: step.rubric,
+              threshold: step.threshold,
+            });
+          }
+        });
+      }
+
+      // Store pending steps in progress
+      if (pendingSteps.length > 0) {
+        if (repo.isPg())
+          await repo.updateTestRun(runId, {
+            progress: {
+              status: 'running',
+              pendingSteps,
+              completedAssertions: [],
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        else
+          await (TestRunModel as any).updateOne(
+            { _id: run._id },
+            {
+              $set: {
+                'progress.pendingSteps': pendingSteps,
+                'progress.completedAssertions': [],
+                'progress.updatedAt': new Date().toISOString(),
+              },
+            },
+          );
       }
 
       const ctx: EngineContext = {
@@ -223,13 +282,45 @@ export async function startDbBackedRun(body: DbRunStartInput) {
             : await (TestRunModel as any).findById(run._id).lean();
           if (fresh?.stopRequested) throw new Error('stopped');
           const itemIdx = 0;
+          
+          // Extract last judge check if this entry is a judge_check
+          const lastJudge = entry?.type === 'judge_check' ? {
+            pass: entry.pass,
+            details: entry.details,
+            subtype: entry.subtype,
+          } : (fresh?.progress?.lastJudge || undefined);
+          
+          // Extract transcript from log entry if present (for live progress display)
+          const tailTranscript = Array.isArray(entry?.transcript) ? entry.transcript : (fresh?.progress?.tailTranscript || undefined);
+          
+          // Track completed assertions incrementally
+          const existingAssertions = Array.isArray(fresh?.progress?.completedAssertions) ? fresh.progress.completedAssertions : [];
+          const completedAssertions = entry?.type === 'judge_check' && entry?.stepIndex != null
+            ? [...existingAssertions.filter((a: any) => a.stepIndex !== entry.stepIndex), {
+                stepIndex: entry.stepIndex,
+                stepName: entry.details?.stepName || entry.stepName,
+                pass: entry.pass,
+                score: entry.details?.score,
+                threshold: entry.details?.threshold,
+                rubric: entry.details?.rubric,
+              }]
+            : existingAssertions;
+          
+          // Track current step index
+          const currentStepIndex = entry?.stepIndex ?? fresh?.progress?.currentStepIndex ?? 0;
+          
           if (repo.isPg())
             await repo.updateTestRun(runId, {
               progress: {
                 status: 'running',
                 currentTestId: entry?.currentTestId,
                 currentItem: itemIdx,
+                currentStepIndex,
                 tailLogs: [entry],
+                tailTranscript,
+                lastJudge,
+                completedAssertions,
+                pendingSteps: fresh?.progress?.pendingSteps,
                 updatedAt: new Date().toISOString(),
               },
             });
@@ -242,7 +333,12 @@ export async function startDbBackedRun(body: DbRunStartInput) {
                     status: 'running',
                     currentTestId: entry?.currentTestId,
                     currentItem: itemIdx,
+                    currentStepIndex,
                     tailLogs: [entry],
+                    tailTranscript,
+                    lastJudge,
+                    completedAssertions,
+                    pendingSteps: fresh?.progress?.pendingSteps,
                     updatedAt: new Date().toISOString(),
                   },
                 },
@@ -268,25 +364,27 @@ export async function startDbBackedRun(body: DbRunStartInput) {
       const finishedAt = new Date();
       const runStatus = failed === 0 && skipped === 0 ? 'passed' : failed === 0 ? 'partial' : 'failed';
 
-      const trimmedItems = items.map((it) => ({
+      // Map engine items to schema-compatible format (includes transcript for UI)
+      const savedItems = items.map((it) => ({
         testId: it.testId,
+        testName: it.testName,
         status: it.status,
+        transcript: it.transcript || [],
         messageCounts: it.messageCounts,
         assertions: it.assertions,
         confirmations: it.confirmations,
         timings: it.timings,
+        artifacts: it.artifacts,
         error: it.error,
       }));
 
+      // Save directly to top-level fields (matching TestRun schema)
       const runUpdate: any = {
         status: runStatus,
         finishedAt,
-        result: {
-          items: trimmedItems,
-          totals: { passed, failed, skipped },
-          passRate,
-          judge: { avgScore: avgJudge },
-        },
+        items: savedItems,
+        totals: { passed, failed, skipped },
+        judge: { avgScore: avgJudge },
         progress: {
           status: 'completed',
           updatedAt: new Date().toISOString(),
@@ -367,5 +465,5 @@ export async function startDbBackedRun(body: DbRunStartInput) {
     }
   })();
 
-  return { id: String((run as any).id || run._id), status: 'queued' } as any;
+  return { runId: String((run as any).id || run._id), status: 'queued' } as any;
 }

@@ -11,6 +11,7 @@ export type EngineEnvironment = {
 
 export type EngineTest = {
   _id: string;
+  name?: string;
   orgId: string;
   suiteId: string;
   script: any;
@@ -43,6 +44,7 @@ export type EngineRunHooks = {
 
 export type EngineItemResult = {
   testId: string;
+  testName?: string;
   status: string;
   transcript: any[];
   messageCounts: { user: number; assistant: number; total: number };
@@ -140,6 +142,7 @@ export async function runTestsWithEngine(
           let fallbackIdx = 0;
           const bag: any = {
             var: {},
+            steps: {}, // Store outputs by step ID for $steps.step_id.output syntax
             last: { assistant: '', user: '', request: undefined },
             transcript: transcriptTurns,
           };
@@ -179,11 +182,12 @@ export async function runTestsWithEngine(
             transcriptTurns.push({ role: 'user', content: userMsg });
             transcriptTurns.push({ role: 'assistant', content: String(replyTxt) });
             bag.last = { assistant: String(replyTxt), user: userMsg, request: bag.last?.request };
-            log({ t: now(), type: 'assistant_reply', content: String(replyTxt), latencyMs: dt });
+            log({ t: now(), type: 'assistant_reply', content: String(replyTxt), latencyMs: dt, transcript: [...transcriptTurns] });
           };
 
           if (hasSteps) {
-            for (const rawStep of stepsArr) {
+            for (let stepIdx = 0; stepIdx < stepsArr.length; stepIdx++) {
+              const rawStep = stepsArr[stepIdx];
               const step = rawStep || {};
               const type = String(step.type || '').toLowerCase();
               if (type === 'message') {
@@ -210,12 +214,19 @@ export async function runTestsWithEngine(
                   lastAssistant: bag?.last?.assistant,
                   lastUser: bag?.last?.user,
                 };
-                const input = interpolateDeep(step.input ?? {}, root);
+                // Support both step.input (legacy) and step.inputMappings (UI builder)
+                const inputSource = step.inputMappings ?? step.input ?? {};
+                const input = interpolateDeep(inputSource, root);
                 try {
                   const exec = await hooks.executeRequest(t.orgId, String(step.requestId), input);
                   bag.last = { ...bag.last, request: exec.payload };
-                  const key = String(step.assign || step.requestId);
+                  const key = String(step.saveAs || step.assign || step.requestId);
                   if (key) bag.var[key] = exec.payload;
+                  // Also store by step ID for $steps.step_id.output syntax
+                  const stepId = String(step.id || '');
+                  if (stepId) {
+                    bag.steps[stepId] = { output: exec.payload, status: exec.status };
+                  }
                   log({
                     t: now(),
                     type: 'request',
@@ -247,6 +258,7 @@ export async function runTestsWithEngine(
                   } else {
                     try {
                       const scope = (step as any).scope || 'last';
+                      const stepName = (step as any).name || '';
                       const lastAssistant = String(
                         transcriptTurns
                           .slice()
@@ -271,12 +283,16 @@ export async function runTestsWithEngine(
                         score: j?.score,
                         threshold: j?.threshold,
                         reasoning: j?.reasoning,
+                        rubric,
+                        stepName,
                         error: j?.error,
                       };
                       log({
                         t: now(),
                         type: 'judge_check',
                         subtype: 'assistant_check_judge',
+                        stepIndex: stepIdx,
+                        stepName,
                         pass,
                         details,
                       });
@@ -285,15 +301,17 @@ export async function runTestsWithEngine(
                         subtype: 'judge',
                         pass,
                         details,
+                        config: { rubric, scope, threshold: (step as any).threshold },
                         stepId: (step as any).id,
-                        name: (step as any).name,
+                        name: stepName,
                         severity: (step as any).severity || 'error',
                       };
                       result.assertions = Array.isArray(result.assertions)
                         ? [...result.assertions, stepAssertion]
                         : [stepAssertion];
                     } catch (e: any) {
-                      const details = { error: e?.message || 'judge_failed' };
+                      const stepName = (step as any).name || '';
+                      const details = { error: e?.message || 'judge_failed', rubric, stepName };
                       log({
                         t: now(),
                         type: 'step_error',
@@ -306,8 +324,9 @@ export async function runTestsWithEngine(
                         subtype: 'judge',
                         pass: false,
                         details,
+                        config: { rubric, scope: (step as any).scope || 'last', threshold: (step as any).threshold },
                         stepId: (step as any).id,
-                        name: (step as any).name,
+                        name: stepName,
                         severity: (step as any).severity || 'error',
                       };
                       result.assertions = Array.isArray(result.assertions)
@@ -367,6 +386,7 @@ export async function runTestsWithEngine(
                     score: j?.score,
                     threshold: j?.threshold,
                     reasoning: j?.reasoning,
+                    rubric,
                     error: j?.error,
                   };
                   log({ t: now(), type: 'judge_check', subtype: 'semantic', pass, details });
@@ -459,6 +479,9 @@ export async function runTestsWithEngine(
               ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
               : undefined;
             return {
+              // These are assistant endpoint latencies (time to get response from the target being tested)
+              source: 'assistant' as const,
+              label: 'Assistant Response Time',
               perTurnMs: latencies,
               avgMs: avg,
               p50Ms: pick(0.5),
@@ -497,6 +520,7 @@ export async function runTestsWithEngine(
 
       const item: EngineItemResult = {
         testId: String(t._id),
+        testName: t.name || undefined,
         status: result?.status || 'failed',
         transcript: result.transcript || [],
         messageCounts: result.messageCounts || { user: 0, assistant: 0, total: 0 },
@@ -514,6 +538,7 @@ export async function runTestsWithEngine(
       const cleanMsg = e?.message || 'exec_failed';
       items.push({
         testId: String(t._id),
+        testName: t.name || undefined,
         status: 'failed',
         transcript: [],
         messageCounts: { user: 0, assistant: 0, total: 0 },

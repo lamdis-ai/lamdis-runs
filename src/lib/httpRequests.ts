@@ -117,7 +117,28 @@ export async function executeRequest(orgId: any, requestId: string, input: any, 
   } else {
     headers['content-type'] = headers['content-type'] || 'application/json';
     const rawBody = (http as any).body !== undefined ? (http as any).body : (input ?? {});
-    const resolvedBody = interpolateDeep(rawBody, { input });
+    // Apply both {key} template replacement (for request body templates) and ${expr} interpolation
+    const tplBody = (val: any): any => {
+      if (val == null) return val;
+      if (typeof val === 'string') {
+        // First apply {key} replacement from input
+        let result = val.replace(/\{([^}]+)\}/g, (_, k) => {
+          const v = input && (input as any)[k];
+          return v !== undefined ? String(v) : `{${k}}`;
+        });
+        return result;
+      }
+      if (Array.isArray(val)) return val.map(v => tplBody(v));
+      if (typeof val === 'object') {
+        const out: any = {};
+        for (const [k, v] of Object.entries(val)) out[k] = tplBody(v);
+        return out;
+      }
+      return val;
+    };
+    const templatedBody = tplBody(rawBody);
+    // Then apply ${expr} interpolation for more complex expressions
+    const resolvedBody = interpolateDeep(templatedBody, { input, ...input });
     body = headers['content-type'].includes('application/json') ? JSON.stringify(resolvedBody) : resolvedBody;
   }
   log?.({ t: new Date().toISOString(), type: 'request_exec', requestId, method, url: reqUrl });

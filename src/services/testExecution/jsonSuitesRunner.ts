@@ -115,7 +115,7 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
               'Are there any limits, timing rules, or gotchas I should know about?',
               'What are my next steps from here?'
             ];
-            const bag: any = { var: {}, last: { assistant: '', user: '', request: undefined }, transcript: transcriptTurns };
+            const bag: any = { var: {}, steps: {}, last: { assistant: '', user: '', request: undefined }, transcript: transcriptTurns };
             let turns = 0;
             result = {
               status: 'running',
@@ -166,12 +166,17 @@ export async function runJsonSuites(body: z.infer<typeof jsonSuitesBodySchema>) 
                   }
                 } else if (type === 'request' && step.requestId) {
                   const root = { ...bag, lastAssistant: bag?.last?.assistant, lastUser: bag?.last?.user };
-                  const input = interpolateDeep(step.input ?? {}, root);
+                  // Support both step.input (legacy) and step.inputMappings (UI builder)
+                  const inputSource = step.inputMappings ?? step.input ?? {};
+                  const input = interpolateDeep(inputSource, root);
                   try {
                     const exec = await executeRequest(orgId, String(step.requestId), input, authHeader, (e:any)=> logs.push(e));
                     bag.last = { ...bag.last, request: exec.payload };
-                    const key = String(step.assign || step.requestId);
+                    const key = String(step.saveAs || step.assign || step.requestId);
                     if (key) bag.var[key] = exec.payload;
+                    // Also store by step ID for $steps.step_id.output syntax
+                    const stepId = String(step.id || '');
+                    if (stepId) bag.steps[stepId] = { output: exec.payload, status: exec.status };
                     logs.push({ t: now(), type: 'request', stage: 'step', requestId: String(step.requestId), status: exec.status });
                   } catch (e:any) {
                     logs.push({ t: now(), type: 'request_error', stage: 'step', requestId: String(step.requestId), error: e?.message || 'exec_failed' });

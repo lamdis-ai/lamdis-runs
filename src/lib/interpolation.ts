@@ -37,13 +37,26 @@ export const getAtPath = (obj: any, path: string): any => {
 export const interpolateString = (s: any, root: any): any => {
   if (s == null) return s;
   if (typeof s !== 'string') return s;
-  return s.replace(/\$\{([^}]+)\}/g, (_, expr) => {
+  // Support both ${expr} and $expr syntax (without curly braces)
+  // First handle ${expr} syntax
+  let result = s.replace(/\$\{([^}]+)\}/g, (_, expr) => {
     try {
       const p = String(expr || '').trim();
       const v = getAtPath(root, p);
-      return v == null ? '' : String(v);
+      return v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
     } catch { return ''; }
   });
+  // Then handle $path.to.value syntax (word chars and dots/brackets after $)
+  result = result.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_\[\]]+)*)/g, (match, expr) => {
+    try {
+      const p = String(expr || '').trim();
+      const v = getAtPath(root, p);
+      // Only replace if we found a value, otherwise keep the original
+      if (v === undefined) return match;
+      return v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+    } catch { return match; }
+  });
+  return result;
 };
 
 export const interpolateDeep = (val: any, root: any): any => {

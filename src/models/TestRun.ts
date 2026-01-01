@@ -17,6 +17,7 @@ const ConfirmationResultSchema = new Schema({
 
 const RunItemSchema = new Schema({
   testId: { type: String, index: true },
+  testName: { type: String },
   status: { type: String },
   transcript: { type: [Schema.Types.Mixed], default: [] },
   messageCounts: { type: Schema.Types.Mixed }, // { user: number, assistant: number, total: number }
@@ -34,6 +35,12 @@ const TestRunSchema = new Schema({
   gitContext: { type: Schema.Types.Mixed },
   envId: { type: String },
   connectionKey: { type: String },
+  // Assistant/target metadata - stores info about the assistant being tested
+  assistant: {
+    name: { type: String },
+    url: { type: String },
+    channel: { type: String },
+  },
   status: { type: String, enum: ['queued','running','passed','failed','partial','stopped'], index: true, default: 'queued' },
   stopRequested: { type: Boolean, default: false },
   startedAt: { type: Date },
