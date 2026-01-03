@@ -1,6 +1,7 @@
 import fetch from 'cross-fetch';
 import { interpolateDeep, interpolateString } from '../../lib/interpolation.js';
 import { synthesizeInitialUserMessage } from '../../lib/initialUserMessage.js';
+import { extractFromConversation } from '../extractionService.js';
 
 export type EngineEnvironment = {
   channel: string;
@@ -342,6 +343,77 @@ export async function runTestsWithEngine(
                     reason: 'unknown_mode',
                     step,
                   });
+                }
+              } else if (type === 'extract') {
+                // Extract step: uses LLM to extract structured data from the conversation
+                const variableName = String((step as any).variableName || '').trim();
+                const description = String((step as any).description || '').trim();
+                const scope = String((step as any).scope || 'last') as 'last' | 'transcript';
+                
+                if (!variableName) {
+                  log({
+                    t: now(),
+                    type: 'step_skip',
+                    subtype: 'extract',
+                    reason: 'missing_variable_name',
+                    step,
+                  });
+                } else if (!description) {
+                  log({
+                    t: now(),
+                    type: 'step_skip',
+                    subtype: 'extract',
+                    reason: 'missing_description',
+                    step,
+                  });
+                } else {
+                  try {
+                    const lastAssistant = String(
+                      transcriptTurns
+                        .slice()
+                        .reverse()
+                        .find((m: any) => m.role === 'assistant')?.content || '',
+                    );
+                    
+                    const extractResult = await extractFromConversation({
+                      variableName,
+                      description,
+                      scope,
+                      lastAssistant,
+                      transcript: transcriptTurns,
+                    });
+                    
+                    // Store extracted value in the bag
+                    if (extractResult.success && extractResult.value !== null && extractResult.value !== undefined) {
+                      bag.var[variableName] = extractResult.value;
+                      // Also store by step ID if provided
+                      const stepId = String(step.id || '');
+                      if (stepId) {
+                        bag.steps[stepId] = { output: extractResult.value, success: true };
+                      }
+                    }
+                    
+                    log({
+                      t: now(),
+                      type: 'extract',
+                      variableName,
+                      description,
+                      scope,
+                      success: extractResult.success,
+                      value: extractResult.value,
+                      reasoning: extractResult.reasoning,
+                      error: extractResult.error,
+                    });
+                  } catch (e: any) {
+                    log({
+                      t: now(),
+                      type: 'step_error',
+                      subtype: 'extract',
+                      variableName,
+                      message: e?.message || 'extract_failed',
+                      step,
+                    });
+                  }
                 }
               } else {
                 log({ t: now(), type: 'step_skip', reason: 'unknown_type', raw: step });
